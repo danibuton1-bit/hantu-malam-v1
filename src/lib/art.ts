@@ -239,7 +239,7 @@ export function emblemSvg(): string {
 <circle cx="100" cy="100" r="84" fill="none" stroke="#d8ae45" stroke-width="2" stroke-dasharray="4 5"/>
 <circle cx="100" cy="100" r="62" fill="#0d0a08" stroke="#8a6a24" stroke-width="2"/>
 <path d="M86 78 a26 26 0 1 0 30 40 a21 21 0 1 1 -30 -40z" fill="#d8ae45"/>
-<path d="M110 74 q0 -14 12 -14 q12 0 12 14 v22 l-4 -4 l-4 4 l-4 -4 l-4 4 l-4 -4 l-4 4z" fill="#e9e4da"/><circle cx="118" cy="72" r="2.2" fill="#111"/><circle cx="126" cy="72" r="2.2" fill="#111"/>
+<g transform="translate(122 84)"><path d="M-9 8 q-3 14 -6 20 M-4 10 q-1 14 -3 22 M0 10 v24 M4 10 q1 14 3 22 M9 8 q3 14 6 20" stroke="#2a0d12" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M-15 4 q-2 -26 15 -28 q17 2 15 28 q-15 8 -30 0z" fill="#0b0809" stroke="#d8ae45" stroke-width="1.2"/><ellipse cx="0" cy="-2" rx="9" ry="10" fill="#e9e4da"/><circle cx="-3.6" cy="-4" r="2.4" fill="#ff1a1a"/><circle cx="3.6" cy="-4" r="2.4" fill="#ff1a1a"/><circle cx="-3.6" cy="-4" r=".9" fill="#300"/><circle cx="3.6" cy="-4" r=".9" fill="#300"/><path d="M-5 3 q5 4 10 0 q-5 2 -10 0z" fill="#600"/><path d="M-3 3 l1 3 l1 -3 M1 3 l1 3 l1 -3" fill="#fff"/></g>
 ${[[60, 64], [140, 128], [74, 140], [146, 92]].map(([x, y]) => `<path d="M${x} ${y! - 4} l1.2 2.8 l2.8 1.2 l-2.8 1.2 l-1.2 2.8 l-1.2 -2.8 l-2.8 -1.2 l2.8 -1.2z" fill="#d8ae45"/>`).join("")}
 <path id="ta" d="M30 100 A70 70 0 0 1 170 100" fill="none"/><path id="tb" d="M24 100 A76 76 0 0 0 176 100" fill="none"/>
 <text font-family="Creepster, fantasy" font-size="30" fill="#d8ae45" letter-spacing="4" text-anchor="middle"><textPath href="#ta" startOffset="50%">HANTU</textPath></text>

@@ -14,6 +14,7 @@ import { toContent } from "@/lib/orient";
 import { PAIR_EMOTES, emoteLabel } from "@/lib/emotes";
 import { MuteButton } from "./MuteButton";
 import { Button } from "./ui/button";
+import { SurvivalRadio } from "./SurvivalRadio";
 
 export type GamePlayer = { id: string; nama: string; username: string; karakter: CharId; role: "ghost" | "hunter" | null; status: string; pref?: string };
 type Live = { yaw: number; x: number; y: number; tx: number; ty: number; status: string; shoutUntil: number; moving: boolean; battery: number; pitch: number; emote: string | null; emoteUntil: number };
@@ -443,6 +444,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
         </div>
         <MicButton code={code} me={me} className="pointer-events-auto" />
         <MuteButton className="pointer-events-auto" />
+        <SurvivalRadio ctx={() => ({ role: amGhost ? "ghost" : "hunter", map: MAPS.find((m) => m.id === MAP_ID)?.nama ?? "Rumah Tua", keys: hud.keys, floor: MAP_ID === "hotel" && /Lt\.2/.test(hud.room) ? 2 : 1, battery: hud.battery, room: hud.room })} />
       </div>
       <div className="absolute left-1/2 top-12 -translate-x-1/2 text-xs text-muted-foreground">{amGhost ? "HANTU ASAP" : "PEMBURU"} - {hud.room}</div>
       <div className="pointer-events-none absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" />
