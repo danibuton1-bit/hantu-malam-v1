@@ -4,7 +4,7 @@ import { Logo } from "@/components/Art";
 import { useApp } from "@/components/AppState";
 import { Button } from "@/components/ui/button";
 import { FullscreenButton } from "@/components/FullscreenButton";
-import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
+import { Stage3D } from "@/components/Stage3D";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,7 +38,7 @@ function Landing() {
   }
   return (
     <main className="relative flex h-full items-center justify-center overflow-hidden">
-      <img src={kuyangImg.url} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30" />
+      <Stage3D kuyangOnly className="absolute inset-0 opacity-70" actors={[]} />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
       <FullscreenButton className="absolute right-3 top-3 z-10" />
       <div className="relative z-10 flex h-full w-full max-w-4xl items-center justify-center px-5 py-4 flex-row gap-8">

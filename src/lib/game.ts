@@ -68,7 +68,13 @@ export const MAPS: { id: MapId; nama: string; desc: string; names: string[] }[] 
 ];
 export const isMapId = (v: unknown): v is MapId => MAPS.some((m) => m.id === v);
 /** Hotel lifts: stand on one pad and ride to the other floor. */
-export const LIFTS = [{ x: 750, y: 410, floor: 1 }, { x: 750, y: 590, floor: 2 }];
+/** Lift 2 sits exactly above lift 1 (floor-2 y = floor-1 y + 500), so the cabin rides one vertical shaft. */
+export const LIFTS = [{ x: 750, y: 410, floor: 1 }, { x: 750, y: 910, floor: 2 }];
+/** Where you step out of the cabin (its open side faces the smaller y). */
+export const liftExit = (l: { x: number; y: number }) => ({ x: l.x, y: l.y - 50 });
+/** Floor-2 rooms are the bottom half of the grid; scene3d stacks them 3.8 m above floor 1. */
+export const FLOOR2_Y = 500;
+export const FLOOR2_H = 3.8;
 export const LIFT_R = 45;
 
 export let MAP_ID: MapId = "rumah";
@@ -81,7 +87,20 @@ export function applyMap(id: MapId) {
   ROOMS = BASE_ROOMS.map((r, i) => ({ ...r, name: m.names[i]! }));
   DOORS = id === "hotel" ? BASE_DOORS.filter((d) => d.v) : BASE_DOORS;
   WALLS = [...OUTER_INNER, ...(id === "hotel" ? MID_SOLID : MID_DOORS), ...FURNITURE];
+  doorOpen = DOORS.map(() => false);
 }
+/** Doors start closed and only open when a player clicks them; closed doors block movement. */
+export let doorOpen: boolean[] = BASE_DOORS.map(() => false);
+export function setDoorOpen(i: number, open: boolean) { if (i >= 0 && i < doorOpen.length) doorOpen[i] = open; }
+export function doorRect(d: { x: number; y: number; v: boolean }): Rect {
+  return d.v ? { x: d.x - T / 2, y: d.y - DOOR / 2, w: T, h: DOOR } : { x: d.x - DOOR / 2, y: d.y - T / 2, w: DOOR, h: T };
+}
+export function nearestDoor(x: number, y: number, max = 90) {
+  let best = -1, bd = max;
+  DOORS.forEach((d, i) => { const dd = Math.hypot(d.x - x, d.y - y); if (dd < bd) { bd = dd; best = i; } });
+  return best;
+}
+const blocked = (x: number, y: number, r: number) => WALLS.some((w) => circleHitsRect(x, y, r, w)) || DOORS.some((d, i) => !doorOpen[i] && circleHitsRect(x, y, r, doorRect(d)));
 export function liftAt(x: number, y: number) {
   return MAP_ID === "hotel" ? LIFTS.find((l) => Math.hypot(l.x - x, l.y - y) < LIFT_R) ?? null : null;
 }
@@ -115,11 +134,11 @@ export function move(x: number, y: number, dx: number, dy: number, r = PLAYER_R)
     return p;
   }
   let nx = x + dx;
-  if (WALLS.some((w) => circleHitsRect(nx, y, r, w))) nx = x;
+  if (blocked(nx, y, r)) nx = x;
   let ny = y + dy;
-  if (WALLS.some((w) => circleHitsRect(nx, ny, r, w))) ny = y;
+  if (blocked(nx, ny, r)) ny = y;
   // diagonal safety: never end inside a wall
-  if (WALLS.some((w) => circleHitsRect(nx, ny, r, w))) return { x, y };
+  if (blocked(nx, ny, r)) return { x, y };
   return { x: nx, y: ny };
 }
 

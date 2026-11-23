@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { ArrowLeft, Crown } from "lucide-react";
-import { CharImg, EmoteIcon, EmoteWheel } from "@/components/Art";
+import { EmoteIcon, EmoteWheel } from "@/components/Art";
 import { SocialPanel } from "@/components/Social";
 import { EMOTE_MS, PAIR_EMOTES } from "@/lib/emotes";
 import { assignRoles, isMapId, MAPS, type MapId } from "@/lib/game";
@@ -15,7 +15,7 @@ import { Game, type GamePlayer } from "@/components/Game";
 import { MuteButton } from "@/components/MuteButton";
 import { ProfileCorner } from "@/components/ProfileCorner";
 import { Button } from "@/components/ui/button";
-import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
+import { Stage3D } from "@/components/Stage3D";
 import { isOffline, OFFLINE_MS } from "@/lib/heartbeat";
 import { supabase } from "@/integrations/supabase/client";
 import { audio } from "@/lib/audio";
@@ -208,15 +208,15 @@ function RoomPage() {
       <button onClick={leave} className="absolute bottom-3 left-3 inline-flex items-center gap-1 text-sm text-muted-foreground"><ArrowLeft className="size-4" /> Keluar</button>
       <h1 className="font-horror text-3xl text-primary">LOBBY {code}</h1>
       {err && <p className="text-sm text-destructive">{err}</p>}
-      <div className="flex gap-3">
-        {[0, 1, 2, 3].map((i) => { const p = players[i]; const em = p ? emotes[p.id] : undefined; return (
-          <div key={i} className="flex h-40 w-24 flex-col items-center justify-end rounded-lg border border-border bg-card p-1">
+      <Stage3D className="h-[38cqh] min-h-40 w-full max-w-2xl cursor-grab" kuyang={players.some((p) => p.pref === "ghost")} actors={players.slice(0, 4).map((p, i) => ({ key: p.id, karakter: p.karakter, nama: p.nama, crown: i === 0, emote: emotes[p.id]?.e ?? null, walk: emotes[p.id]?.walk ?? false }))} />
+      <div className="flex gap-2">
+        {[0, 1, 2, 3].map((i) => { const p = players[i]; return (
+          <div key={i} className="flex w-24 flex-col items-center rounded-md border border-border bg-card/80 px-1 py-0.5">
             {p ? <>
-              <CharImg id={p.karakter} emote={em?.e ?? null} walking={em?.walk ?? false} className="relative z-10 h-28 transition-transform duration-[850ms] ease-linear" style={{ transform: `translateX(${em?.dx ?? 0}px)${(em?.dx ?? 0) > 0 ? " scaleX(-1)" : ""}` }} />
               <div className="flex w-full items-center justify-center gap-1 truncate text-xs font-bold">{i === 0 && <Crown className="size-3 text-gold" />}{p.nama}</div>
               <div className={`text-[10px] font-bold ${p.pref === "ghost" ? "text-primary" : "text-chart-4"}`}>{p.pref === "ghost" ? "INGIN JADI HANTU" : "PEMBURU"}</div>
               <div className={`text-[10px] font-bold ${i === 0 || readyIds.has(p.id) ? "text-gold" : "text-muted-foreground"}`}>{i === 0 ? "KAPTEN" : readyIds.has(p.id) ? "SIAP" : "BELUM SIAP"}</div>
-            </> : <div className="mb-12 flex size-12 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground text-2xl text-muted-foreground">+</div>}
+            </> : <div className="py-2 text-xs text-muted-foreground">+ kosong</div>}
           </div>
         ); })}
       </div>
@@ -229,7 +229,7 @@ function RoomPage() {
       {inRoom && <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 p-1.5 text-xs">
         <span className="text-muted-foreground">Pilih peran:</span>
         <Button size="sm" variant={myPref === "hunter" ? "default" : "secondary"} onClick={() => void setPref("hunter")}>Pemburu</Button>
-        <Button size="sm" variant={myPref === "ghost" ? "default" : "secondary"} onClick={() => void setPref("ghost")}><img src={kuyangImg.url} alt="" className="size-5 rounded-full object-cover" /> Hantu</Button>
+        <Button size="sm" variant={myPref === "ghost" ? "default" : "secondary"} onClick={() => void setPref("ghost")}>Hantu Kuyang</Button>
       </div>}
       {inRoom && <button onClick={() => setWheel(true)} className="flex items-center gap-1 rounded-full border-2 border-gold/70 bg-card/80 px-4 py-2 text-xs font-bold"><EmoteIcon id="dance" className="size-4" /> EMOTE</button>}
       <EmoteWheel open={wheel} onClose={() => setWheel(false)} onPick={doEmote} />

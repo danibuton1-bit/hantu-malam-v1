@@ -1,6 +1,6 @@
 // First-person 3D renderer for the shared 2D game world. World px -> meters via U.
 import * as THREE from "three";
-import { BATTERIES, DOORS, DOOR_W, EXIT, KEYS, LIFTS, ROOMS, WALLS, WORLD, type MapId } from "./game";
+import { BATTERIES, DOORS, DOOR_W, EXIT, FLOOR2_H, FLOOR2_Y, KEYS, LIFTS, ROOMS, WALLS, WORLD, doorOpen, type MapId, type Rect } from "./game";
 import { audio } from "./audio";
 import { CHARACTERS, isChar, type CharId } from "./art";
 import { buildAvatar, nameTag, type Avatar } from "./avatar3d";
@@ -16,6 +16,23 @@ const MOBILE = typeof window !== "undefined" && window.matchMedia?.("(pointer: c
 const Mat = (p: THREE.MeshStandardMaterialParameters) => (LOW_END ? new THREE.MeshLambertMaterial({ color: p.color ?? 0xffffff, map: p.map ?? null, emissive: p.emissive ?? 0, emissiveIntensity: p.emissiveIntensity ?? 1, transparent: p.transparent ?? false, opacity: p.opacity ?? 1 }) as unknown as THREE.MeshStandardMaterial : new THREE.MeshStandardMaterial(p));
 export const EYE = 1.6;
 const WALL_H = 3.2;
+/** World px -> 3D. On the hotel the bottom half of the grid (floor 2) is stacked FLOOR2_H above floor 1. */
+type V3 = { x: number; z: number; b: number };
+const mkV = (stack: boolean) => (x: number, y: number): V3 => (stack && y >= FLOOR2_Y ? { x: x * U, z: (y - FLOOR2_Y) * U, b: FLOOR2_H } : { x: x * U, z: y * U, b: 0 });
+/** Split a rect at the floor boundary so each half is stacked on its own floor. */
+const splitRect = (stack: boolean, r: Rect): Rect[] => (!stack || r.y >= FLOOR2_Y || r.y + r.h <= FLOOR2_Y ? [r] : [{ ...r, h: FLOOR2_Y - r.y }, { ...r, y: FLOOR2_Y, h: r.y + r.h - FLOOR2_Y }]);
+/** Horizontal plane (floor/ceiling) with an optional rectangular hole (the lift shaft). */
+function slab(w: number, h: number, up: boolean, hole?: { x: number; z: number; w: number; h: number }) {
+  if (!hole) return new THREE.PlaneGeometry(w, h);
+  const sh = new THREE.Shape(); sh.moveTo(-w / 2, -h / 2); sh.lineTo(w / 2, -h / 2); sh.lineTo(w / 2, h / 2); sh.lineTo(-w / 2, h / 2); sh.closePath();
+  const sz = up ? -1 : 1; // floor (rot -90) maps shape y -> -z, ceiling (rot +90) maps y -> +z
+  const hp = new THREE.Path(); const hx = hole.x, hy = hole.z * sz;
+  hp.moveTo(hx - hole.w / 2, hy - hole.h / 2); hp.lineTo(hx - hole.w / 2, hy + hole.h / 2); hp.lineTo(hx + hole.w / 2, hy + hole.h / 2); hp.lineTo(hx + hole.w / 2, hy - hole.h / 2); hp.closePath();
+  sh.holes.push(hp);
+  const g = new THREE.ShapeGeometry(sh);
+  const uv = g.attributes["uv"]!; for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + w / 2) / w, (uv.getY(i) + h / 2) / h);
+  return g;
+}
 
 function canvasTex(draw: (g: CanvasRenderingContext2D, s: number) => void, repeat: number) {
   const c = document.createElement("canvas"); c.width = c.height = 256;
@@ -99,23 +116,8 @@ function buildTheme(scene: THREE.Scene, map: MapId) {
     });
   }
   if (map === "hotel") {
-    const metal = Mat({ color: 0x9a9aa2, metalness: 0.8, roughness: 0.3 });
-    const gold = Mat({ color: 0xc9a040, emissive: 0x3a2a00, metalness: 0.7, roughness: 0.3 });
-    const labels: THREE.Mesh[] = [];
-    for (const l of LIFTS) {
-      const g = new THREE.Group(); g.position.set(l.x * U, 0, l.y * U); scene.add(g);
-      const zs = l.floor === 1 ? 1 : -1; // back wall sits against the solid floor divider
-      const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, WALL_H, 0.1), metal); back.position.set(0, WALL_H / 2, zs * 0.85); g.add(back);
-      for (const sx of [-1, 1]) { const side = new THREE.Mesh(new THREE.BoxGeometry(0.1, WALL_H, 1.7), metal); side.position.set(sx * 0.9, WALL_H / 2, 0); g.add(side); }
-      const floor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.04, 1.7), gold); floor.position.y = 0.02; g.add(floor);
-      const c = document.createElement("canvas"); c.width = 256; c.height = 96; const x = c.getContext("2d")!;
-      x.fillStyle = "#120a04"; x.fillRect(0, 0, 256, 96); x.fillStyle = "#ffb030"; x.font = "bold 44px monospace"; x.textAlign = "center"; x.fillText(`LIFT ${l.floor === 1 ? "▲" : "▼"} ${l.floor}`, 128, 62);
-      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })); lab.position.set(0, WALL_H - 0.4, zs * 0.79); g.add(lab); labels.push(lab);
-      const lt = new THREE.PointLight(0xffc870, 5, 5); lt.position.set(0, WALL_H - 0.5, 0); g.add(lt);
-    }
-    // chandeliers
-    for (const r of ROOMS) { const lt = new THREE.PointLight(0xffb060, LOW_END ? 3 : 4, 7, 1.8); lt.position.set((r.x + r.w / 2) * U, WALL_H - 0.4, (r.y + r.h / 2) * U); scene.add(lt); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd090 })); bulb.position.copy(lt.position); scene.add(bulb); }
+    const V = mkV(true);
+    for (const r of ROOMS) { const v = V(r.x + r.w / 2, r.y + r.h / 2); const lt = new THREE.PointLight(0xffb060, LOW_END ? 3 : 4, 7, 1.8); lt.position.set(v.x, v.b + WALL_H - 0.4, v.z); scene.add(lt); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd090 })); bulb.position.copy(lt.position); scene.add(bulb); }
   }
   return { update: (t: number, dt: number, cam: { x: number; y: number }) => ups.forEach((u) => u(t, dt, cam)) };
 }
@@ -124,6 +126,9 @@ type Ent = { sprite: THREE.Sprite; light?: THREE.PointLight };
 
 export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "ghost"; amGhost: boolean; imgs: Record<string, string>; drone?: boolean; map?: MapId }) {
   const MAP = opts.map ?? "rumah";
+  const STACK = MAP === "hotel";
+  const V = mkV(STACK);
+  const L1 = LIFTS[0]!; const shaft = { x: L1.x * U, z: L1.y * U, w: 2.0, h: 1.9 };
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE && !LOW_END, powerPreference: LOW_END ? "low-power" : "high-performance" });
   renderer.setPixelRatio(pixelRatioFor(getGfx(), window.devicePixelRatio || 1, !!MOBILE, LOW_END));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -149,22 +154,67 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
     const outdoor = MAP === "kuburan" || (MAP === "rumah" && r.name.startsWith("Kuburan"));
     const tex = MAP === "rumahsakit" ? tileTex("#c9d6cf", "#9fb0a8") : MAP === "hotel" ? carpetTex(r.y < 500 ? "#5a1018" : "#18304a") : outdoor ? canvasTex((g, s) => { g.fillStyle = "#1a2414"; g.fillRect(0, 0, s, s); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${40 + Math.random() * 40},${60 + Math.random() * 50},30,.6)`; g.fillRect(Math.random() * s, Math.random() * s, 2, 5); } }, 1) : woodTex(r.floor === "#18222a" ? "#2b3a40" : "#4a2e1e");
     tex.repeat.set(r.w * U / 3, r.h * U / 3);
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(r.w * U, r.h * U), Mat({ map: tex, roughness: 0.9 }));
-    f.rotation.x = -Math.PI / 2; f.position.set((r.x + r.w / 2) * U, 0, (r.y + r.h / 2) * U); scene.add(f);
+    const v = V(r.x + r.w / 2, r.y + r.h / 2);
+    const inShaft = STACK && Math.abs(shaft.x - v.x) < r.w * U / 2 && Math.abs(shaft.z - v.z) < r.h * U / 2;
+    const hole = inShaft ? { x: shaft.x - v.x, z: shaft.z - v.z, w: shaft.w, h: shaft.h } : undefined;
+    const f = new THREE.Mesh(slab(r.w * U, r.h * U, true, v.b > 0 ? hole : undefined), Mat({ map: tex, roughness: 0.9 }));
+    f.rotation.x = -Math.PI / 2; f.position.set(v.x, v.b, v.z); scene.add(f);
     if (!outdoor) {
-      const c = new THREE.Mesh(new THREE.PlaneGeometry(r.w * U, r.h * U), Mat({ color: 0x1a1414, roughness: 1 }));
-      c.rotation.x = Math.PI / 2; c.position.set((r.x + r.w / 2) * U, WALL_H, (r.y + r.h / 2) * U); scene.add(c); ceilings.push(c);
+      const c = new THREE.Mesh(slab(r.w * U, r.h * U, false, v.b === 0 ? hole : undefined), Mat({ color: 0x1a1414, roughness: 1 }));
+      c.rotation.x = Math.PI / 2; c.position.set(v.x, v.b + WALL_H, v.z); scene.add(c); ceilings.push(c);
     }
   }
   // walls & furniture (first boxes are structural walls; thin ones => walls)
   const wallMat = MAP === "rumahsakit" ? Mat({ map: tileTex("#dfe8e2", "#b8c6bf"), roughness: 0.6 }) : MAP === "hotel" ? Mat({ map: wallpaperTex, roughness: 0.9 }) : MAP === "kuburan" ? Mat({ map: stoneTex, roughness: 1 }) : Mat({ map: wallTex, roughness: 0.95 });
   const WALL_HM = MAP === "kuburan" ? 1.5 : WALL_H;
   const furnMat = Mat({ map: woodTex("#3a2214"), roughness: 0.8 });
-  for (const w of WALLS) {
-    const isWall = Math.min(w.w, w.h) <= 20;
+  for (const w0 of WALLS) for (const w of splitRect(STACK, w0)) {
+    const isWall = Math.min(w0.w, w0.h) <= 20;
     const h = isWall ? WALL_HM : 0.9;
     const m = new THREE.Mesh(new THREE.BoxGeometry(w.w * U, h, w.h * U), isWall ? wallMat : furnMat);
-    m.position.set((w.x + w.w / 2) * U, h / 2, (w.y + w.h / 2) * U); scene.add(m);
+    const v = V(w.x + w.w / 2, w.y + w.h / 2);
+    m.position.set(v.x, v.b + h / 2, v.z); scene.add(m);
+  }
+  // hotel: one vertical lift shaft; the cabin physically rides between floor 1 (y=0) and floor 2 (y=FLOOR2_H)
+  const pickables: THREE.Object3D[] = [];
+  let lift: { cabin: THREE.Group; land: { l: THREE.Mesh; r: THREE.Mesh; b: number }[]; inner: { l: THREE.Mesh; r: THREE.Mesh }; label: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; last: string } } | null = null;
+  if (STACK) {
+    const metal = Mat({ color: 0x9a9aa2, metalness: 0.85, roughness: 0.28 });
+    const dark = Mat({ color: 0x2a2a30, metalness: 0.7, roughness: 0.4 });
+    const gold = Mat({ color: 0xc9a040, emissive: 0x3a2a00, metalness: 0.7, roughness: 0.3 });
+    const W = 1.8, D = 1.7, H = WALL_H - 0.3, TOP = FLOOR2_H + WALL_H;
+    const sg = new THREE.Group(); sg.position.set(shaft.x, 0, shaft.z); scene.add(sg);
+    // shaft walls (back + sides), full height
+    const sb = new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, TOP, 0.1), dark); sb.position.set(0, TOP / 2, D / 2 + 0.1); sg.add(sb);
+    for (const sx of [-1, 1]) { const ss = new THREE.Mesh(new THREE.BoxGeometry(0.1, TOP, D + 0.3), dark); ss.position.set(sx * (W / 2 + 0.1), TOP / 2, 0); sg.add(ss); }
+    // landing doors on each floor (front, closed unless the cabin is here)
+    const land = [0, FLOOR2_H].map((b) => {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, 0.25, 0.14), gold); frame.position.set(0, b + H + 0.12, -D / 2 - 0.08); sg.add(frame);
+      const above = new THREE.Mesh(new THREE.BoxGeometry(W + 0.3, WALL_H - H - 0.25, 0.1), dark); above.position.set(0, b + H + 0.25 + (WALL_H - H - 0.25) / 2, -D / 2 - 0.08); sg.add(above);
+      const mk = (sx: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(W / 2, H, 0.05), metal); m.position.set(sx * W / 4, b + H / 2, -D / 2 - 0.1); sg.add(m); return m; };
+      return { l: mk(-1), r: mk(1), b };
+    });
+    // cabin
+    const cabin = new THREE.Group(); sg.add(cabin);
+    const cf = new THREE.Mesh(new THREE.BoxGeometry(W, 0.06, D), gold); cf.position.y = 0.03; cabin.add(cf);
+    const cr = new THREE.Mesh(new THREE.BoxGeometry(W, 0.06, D), metal); cr.position.y = H + 0.03; cabin.add(cr);
+    const cb = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.05), metal); cb.position.set(0, H / 2, D / 2 - 0.03); cabin.add(cb);
+    for (const sx of [-1, 1]) { const cs = new THREE.Mesh(new THREE.BoxGeometry(0.05, H, D), metal); cs.position.set(sx * (W / 2 - 0.03), H / 2, 0); cabin.add(cs); }
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(W - 0.2, 0.05, 0.05), gold); rail.position.set(0, 1.0, D / 2 - 0.1); cabin.add(rail);
+    const mkInner = (sx: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(W / 2, H, 0.04), metal); m.position.set(sx * W / 4, H / 2, -D / 2 + 0.03); cabin.add(m); return m; };
+    const inner = { l: mkInner(-1), r: mkInner(1) };
+    // button panel on the inner right wall: ▲ up / ▼ down
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.6, 0.3), dark); panel.position.set(W / 2 - 0.07, 1.25, -0.2); cabin.add(panel);
+    const btnTex = (up: boolean) => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d")!; g.fillStyle = up ? "#1f7a3a" : "#8a1a1a"; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.fillStyle = "#fff"; g.beginPath(); if (up) { g.moveTo(32, 12); g.lineTo(52, 44); g.lineTo(12, 44); } else { g.moveTo(32, 52); g.lineTo(52, 20); g.lineTo(12, 20); } g.fill(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+    for (const up of [true, false]) {
+      const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.04, 20), [new THREE.MeshBasicMaterial({ color: up ? 0x2fbf5a : 0xd03030 }), new THREE.MeshBasicMaterial({ map: btnTex(up) }), new THREE.MeshBasicMaterial({ color: 0x222222 })]);
+      btn.rotation.z = Math.PI / 2; btn.position.set(W / 2 - 0.1, up ? 1.38 : 1.12, -0.2); btn.userData["pick"] = up ? "up" : "down"; cabin.add(btn); pickables.push(btn);
+    }
+    const lc = document.createElement("canvas"); lc.width = 128; lc.height = 64; const lctx = lc.getContext("2d")!;
+    const ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace;
+    const disp = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25), new THREE.MeshBasicMaterial({ map: ltex })); disp.position.set(0, H - 0.25, D / 2 - 0.06); disp.rotation.y = Math.PI; cabin.add(disp);
+    const cl = new THREE.PointLight(0xfff0d0, 4, 4); cl.position.set(0, H - 0.2, 0); cabin.add(cl);
+    lift = { cabin, land, inner, label: { ctx: lctx, tex: ltex, last: "" } };
   }
   // doors (auto-swing open when anyone is near)
   const doorMat = Mat({ map: woodTex("#4a2c18"), roughness: 0.9 });
@@ -175,8 +225,10 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
     panel.position.set(w / 2, h / 2, 0);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), Mat({ color: 0xc9a040 }));
     knob.position.set(w - 0.15, h * 0.5, 0.07); pivot.add(panel, knob);
-    if (d.v) { pivot.position.set(d.x * U, 0, (d.y - DOOR_W / 2) * U); pivot.rotation.y = -Math.PI / 2; }
-    else pivot.position.set((d.x - DOOR_W / 2) * U, 0, d.y * U);
+    const v = d.v ? V(d.x, d.y - DOOR_W / 2 + 1) : V(d.x - DOOR_W / 2, d.y);
+    if (d.v) { pivot.position.set(v.x, v.b, v.z - (STACK && d.y >= FLOOR2_Y && d.y - DOOR_W / 2 < FLOOR2_Y ? 0 : 0)); pivot.rotation.y = -Math.PI / 2; }
+    else pivot.position.set(v.x, v.b, v.z);
+    const i = DOORS.indexOf(d); panel.userData["pick"] = `door:${i}`; knob.userData["pick"] = `door:${i}`; pickables.push(panel, knob);
     scene.add(pivot);
     return { d, pivot, base: pivot.rotation.y, open: 0, was: false };
   });
@@ -190,7 +242,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   // exit gate
   const gateMat = Mat({ color: 0x8b0d17, emissive: 0x8b0d17, emissiveIntensity: 0.6 });
   const gate = new THREE.Mesh(new THREE.TorusGeometry(EXIT.r * U, 0.08, 8, 32), gateMat);
-  gate.position.set(EXIT.x * U, EXIT.r * U + 0.1, EXIT.y * U); gate.rotation.y = Math.PI / 2; scene.add(gate);
+  { const v = V(EXIT.x, EXIT.y); gate.position.set(v.x, v.b + EXIT.r * U + 0.1, v.z); } gate.rotation.y = Math.PI / 2; scene.add(gate);
   const gateLight = new THREE.PointLight(0x8b0d17, 2, 5); gateLight.position.copy(gate.position); scene.add(gateLight);
 
   const tl = new THREE.TextureLoader();
@@ -200,8 +252,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex(k), transparent: true, alphaTest: 0.1 }));
     s.scale.set(w, h, 1); scene.add(s); return s;
   };
-  const keys = KEYS.map((k) => { const s = sprite("key", 0.6, 0.3); s.position.set(k.x * U, 0.6, k.y * U); const l = new THREE.PointLight(0xffc840, 0.8, 2.5); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
-  const bats = BATTERIES.map((b) => { const s = sprite("bat", 0.25, 0.4); s.position.set(b.x * U, 0.3, b.y * U); const l = new THREE.PointLight(0x60ff80, 0.5, 1.8); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
+  const keys = KEYS.map((k) => { const s = sprite("key", 0.6, 0.3); const v = V(k.x, k.y); s.position.set(v.x, v.b + 0.6, v.z); s.userData["b"] = v.b; const l = new THREE.PointLight(0xffc840, 0.8, 2.5); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
+  const bats = BATTERIES.map((b) => { const s = sprite("bat", 0.25, 0.4); const v = V(b.x, b.y); s.position.set(v.x, v.b + 0.3, v.z); const l = new THREE.PointLight(0x60ff80, 0.5, 1.8); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
   const npcKuyangs: Record<string, Kuyang> = {};
   const players: Record<string, { sprite: THREE.Sprite | null; av: Avatar | null; ku: Kuyang | null; tag: THREE.Sprite | null; light: THREE.SpotLight; target: THREE.Object3D; shout: THREE.Sprite }> = {};
 
@@ -259,6 +311,12 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   const ledG = new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0x30ff60 })); ledG.position.set(0.12, -0.06, 0.17);
   const dLight = new THREE.PointLight(0xff3040, 1.2, 3); dLight.position.y = -0.15; drone.add(ledR, ledG, dLight);
   let bobT = 0, vmX = 0;
+  // 3D jumpscare: a full Kuyang lunges out of the dark straight at the camera, fangs first, with heavy shake
+  const scareKu = buildKuyang(false); scareKu.root.visible = false; camera.add(scareKu.root);
+  scareKu.root.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) { (m as THREE.MeshStandardMaterial).fog = false; m.depthTest = false; } o.renderOrder = 20; });
+  const scareLight = new THREE.PointLight(0xff1020, 0, 4); scareLight.position.set(0, 0.2, -0.3); camera.add(scareLight);
+  let scareAt = -1;
+  const raycaster = new THREE.Raycaster(); raycaster.far = 3.2;
   return {
     resize() {
       const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -280,20 +338,31 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
     frame(st: {
       dt: number; t: number; cam: { x: number; y: number }; yaw: number; pitch: number; moving: boolean; battery: number; near: number;
       keyMask: number; batMask: number; npcs: { kind: string; x: number; y: number }[];
-      others: { id: string; x: number; y: number; yaw: number; visible: boolean; shouting: boolean; ghost: boolean; moving: boolean; pitch: number; emote: string | null }[];
+      others: { id: string; x: number; y: number; yaw: number; visible: boolean; shouting: boolean; ghost: boolean; moving: boolean; pitch: number; emote: string | null; liftY?: number }[];
       firstPerson: boolean; camH?: number; drone?: { x: number; y: number; h: number; yaw: number } | null;
+      /** Hotel lift: cabin height (m), landing door openness per floor (0..1), travel direction, and whether the camera rides it. */
+      lift?: { y: number; doors: number[]; dir: number; riding: boolean } | null;
     }) {
-      for (const dr of doors) {
-        const near = [st.cam, ...st.others.filter((o) => o.visible || o.ghost)].some((p) => Math.hypot(p.x - dr.d.x, p.y - dr.d.y) < 120);
-        if (near && !dr.was && Math.hypot(st.cam.x - dr.d.x, st.cam.y - dr.d.y) < 160) audio.creak();
+      doors.forEach((dr, i) => {
+        const near = !!doorOpen[i];
+        if (near !== dr.was && Math.hypot(st.cam.x - dr.d.x, st.cam.y - dr.d.y) < 400) audio.creak();
         dr.was = near;
         dr.open += ((near ? 1 : 0) - dr.open) * Math.min(1, st.dt * 4);
         dr.pivot.rotation.y = dr.base + dr.open * 1.6;
+      });
+      const cv = V(st.cam.x, st.cam.y);
+      if (lift && st.lift) {
+        const L = st.lift; lift.cabin.position.y = L.y;
+        lift.land.forEach((ld, i) => { const o = L.doors[i] ?? 0; ld.l.position.x = -0.45 - o * 0.85; ld.r.position.x = 0.45 + o * 0.85; });
+        const io = Math.max(...L.doors); lift.inner.l.position.x = -0.45 - io * 0.85; lift.inner.r.position.x = 0.45 + io * 0.85;
+        const txt = L.y > FLOOR2_H - 0.05 ? "2" : L.y < 0.05 ? "1" : L.dir > 0 ? "▲" : "▼";
+        if (txt !== lift.label.last) { const g = lift.label.ctx; g.fillStyle = "#120a04"; g.fillRect(0, 0, 128, 64); g.fillStyle = "#ffb030"; g.font = "bold 44px monospace"; g.textAlign = "center"; g.fillText(txt, 64, 48); lift.label.tex.needsUpdate = true; lift.label.last = txt; }
       }
+      const camBase = st.lift?.riding ? st.lift.y : cv.b;
       if (st.moving) bobT += st.dt * 9;
       const bob = st.firstPerson ? Math.sin(bobT) * 0.04 : 0;
       const shake = st.near > 0.55 ? (Math.random() - 0.5) * st.near * 0.03 : 0;
-      camera.position.set(st.cam.x * U, st.camH ?? EYE + Math.abs(bob), st.cam.y * U);
+      camera.position.set(cv.x, st.camH ?? camBase + EYE + Math.abs(bob), cv.z);
       if (opts.drone) {
         // aerial: roofs vanish above the walls and fog thins with altitude so the arena stays readable
         const h = st.camH ?? EYE; const above = h > WALL_H - 0.2;
@@ -302,7 +371,17 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       }
       drone.visible = !!st.drone;
       if (st.drone) { drone.position.set(st.drone.x * U, st.drone.h + Math.sin(st.t * 2) * 0.03, st.drone.y * U); drone.rotation.y = st.drone.yaw; rotors.forEach((r, i) => { r.rotation.y = st.t * 40 + i; }); const on = Math.sin(st.t * 6) > 0; ledR.visible = on; ledG.visible = !on; }
-      camera.rotation.set(st.pitch + shake, st.yaw, 0);
+      const sa = scareAt < 0 ? 1 : (st.t - scareAt);
+      if (sa >= 0 && sa < 1.4) {
+        // lunge: 2.2 m -> 0.42 m in front of the eyes in ~0.18 s, then hover there grinning
+        const k = Math.min(1, sa / 0.18), d = 2.2 - (2.2 - 0.42) * (1 - (1 - k) ** 3);
+        scareKu.root.visible = true; scareKu.update({ t: st.t * 3, dt: st.dt, moving: true });
+        scareKu.root.position.set(Math.sin(st.t * 40) * 0.02, -0.18 - (scareKu.root.position.y - scareKu.root.position.y), -d);
+        scareKu.root.position.y = -0.2 + Math.sin(st.t * 30) * 0.015; scareKu.root.rotation.set(-0.15, Math.PI, 0);
+        scareLight.intensity = 6 + Math.random() * 4;
+      } else { scareKu.root.visible = false; scareLight.intensity = 0; }
+      const jolt = sa >= 0 && sa < 1.4 ? (1 - sa / 1.4) * 0.09 : 0;
+      camera.rotation.set(st.pitch + shake + (Math.random() - 0.5) * jolt, st.yaw + (Math.random() - 0.5) * jolt, (Math.random() - 0.5) * jolt * 0.8);
       vm.visible = st.firstPerson;
       vm.position.set(vmX + Math.cos(bobT * 0.5) * 0.02, bob * 0.6, 0);
       // flashlight power
@@ -316,37 +395,39 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       }
       const open = st.keyMask === 31;
       gateMat.color.set(open ? 0x59e36b : 0x8b0d17); gateMat.emissive.set(open ? 0x59e36b : 0x8b0d17); gateLight.color.set(open ? 0x59e36b : 0x8b0d17);
-      keys.forEach((k, i) => { const on = !(st.keyMask & (1 << i)); k.sprite.visible = on; k.light!.visible = on; k.sprite.position.y = 0.6 + Math.sin(st.t * 3 + i) * 0.08; });
+      keys.forEach((k, i) => { const on = !(st.keyMask & (1 << i)); k.sprite.visible = on; k.light!.visible = on; k.sprite.position.y = (k.sprite.userData["b"] as number) + 0.6 + Math.sin(st.t * 3 + i) * 0.08; });
       bats.forEach((b, i) => { const on = !(st.batMask & (1 << i)); b.sprite.visible = on; b.light!.visible = on; });
       st.npcs.forEach((n, i) => {
         const key = `npc${i}`;
         let k = npcKuyangs[key];
         if (!k) { k = npcKuyangs[key] = buildKuyang(true); scene.add(k.root); }
-        k.root.position.x = n.x * U; k.root.position.z = n.y * U;
-        k.root.rotation.y = Math.atan2(st.cam.x * U - k.root.position.x, st.cam.y * U - k.root.position.z);
-        k.update({ t: st.t + i * 1.7, dt: st.dt, moving: true });
+        const nv3 = V(n.x, n.y);
+        k.root.position.x = nv3.x; k.root.position.z = nv3.z;
+        k.root.rotation.y = Math.atan2(cv.x - k.root.position.x, cv.z - k.root.position.z);
+        k.update({ t: st.t + i * 1.7, dt: st.dt, moving: true }); k.root.position.y += nv3.b;
       });
       for (const o of st.others) {
         const p = players[o.id]; if (!p) continue;
+        const ov = V(o.x, o.y); const ob = o.liftY ?? ov.b, ox = ov.x, oz = ov.z;
         p.light.visible = o.visible && !o.ghost;
         if (p.av) {
-          p.av.root.visible = o.visible; p.av.root.position.set(o.x * U, 0, o.y * U); p.av.root.rotation.y = o.yaw;
+          p.av.root.visible = o.visible; p.av.root.position.set(ox, ob, oz); p.av.root.rotation.y = o.yaw;
           if (o.visible) p.av.update({ dt: st.dt, t: st.t, moving: o.moving, pitch: o.pitch, emote: o.emote });
         }
         if (p.ku) {
-          p.ku.root.visible = o.visible; p.ku.root.position.x = o.x * U; p.ku.root.position.z = o.y * U; p.ku.root.rotation.y = o.yaw + Math.PI;
-          if (o.visible) p.ku.update({ t: st.t, dt: st.dt, moving: o.moving });
+          p.ku.root.visible = o.visible; p.ku.root.position.x = ox; p.ku.root.position.z = oz; p.ku.root.rotation.y = o.yaw + Math.PI;
+          if (o.visible) { p.ku.update({ t: st.t, dt: st.dt, moving: o.moving }); p.ku.root.position.y += ob; }
         }
         if (p.sprite) {
           p.sprite.visible = o.visible;
           const h = o.ghost ? 1.3 + Math.sin(st.t * 2.5) * 0.1 : 0.8;
-          p.sprite.position.set(o.x * U, h, o.y * U);
+          p.sprite.position.set(ox, ob + h, oz);
           if (o.ghost) (p.sprite.material as THREE.SpriteMaterial).opacity = 0.75 + Math.sin(st.t * 4) * 0.15;
         }
-        if (p.tag) { p.tag.visible = o.visible; p.tag.position.set(o.x * U, 1.78, o.y * U); }
-        p.light.position.set(o.x * U, 1.2, o.y * U);
-        p.target.position.set(o.x * U - Math.sin(o.yaw) * 5, 0.6, o.y * U - Math.cos(o.yaw) * 5);
-        p.shout.visible = o.visible && o.shouting; p.shout.position.set(o.x * U, 2.1 + Math.sin(st.t * 12) * 0.05, o.y * U);
+        if (p.tag) { p.tag.visible = o.visible; p.tag.position.set(ox, ob + 1.78, oz); }
+        p.light.position.set(ox, ob + 1.2, oz);
+        p.target.position.set(ox - Math.sin(o.yaw) * 5, ob + 0.6, oz - Math.cos(o.yaw) * 5);
+        p.shout.visible = o.visible && o.shouting; p.shout.position.set(ox, ob + 2.1 + Math.sin(st.t * 12) * 0.05, oz);
       }
       theme.update(st.t, st.dt, st.cam);
       renderer.render(scene, camera);
@@ -356,6 +437,15 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       (scene.fog as THREE.FogExp2).density = on ? 0.012 : 0.035;
       scene.background = new THREE.Color(on ? 0x0a2010 : fogCol);
       renderer.toneMappingExposure = on ? 1.6 : 1;
+    },
+    /** Start the 3D Kuyang jumpscare (t = game time from frame()). */
+    scare(t: number) { scareAt = t; },
+    /** Tap/click picking: returns "door:<i>", "up" or "down" for the object under the screen point, within reach. */
+    pick(clientX: number, clientY: number): string | null {
+      const r = canvas.getBoundingClientRect();
+      raycaster.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+      const hit = raycaster.intersectObjects(pickables, false)[0];
+      return (hit?.object.userData["pick"] as string | undefined) ?? null;
     },
     dispose() { renderer.dispose(); },
   };

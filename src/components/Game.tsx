@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 import { Battery, Ghost, KeyRound, Megaphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
 import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, hoodieSvg, loadImg, pocongSvg, type CharId } from "@/lib/art";
 import { audio } from "@/lib/audio";
-import { BATTERIES, BOT_GHOST_ID, BOT_PATROL, CATCH_DIST, ROOMS, WALLS, WORLD, decideOutcome, EXIT, GAME_SECONDS, GHOST_SPAWN, HUNTER_SPAWNS, KEYS, move, npcsAt, roomAt, TOTAL_KEYS, applyMap, liftAt, LIFTS, MAP_ID, MAPS, type MapId } from "@/lib/game";
+import { BATTERIES, BOT_GHOST_ID, BOT_PATROL, CATCH_DIST, ROOMS, WALLS, WORLD, decideOutcome, EXIT, GAME_SECONDS, GHOST_SPAWN, HUNTER_SPAWNS, KEYS, move, npcsAt, roomAt, TOTAL_KEYS, applyMap, liftAt, liftExit, LIFTS, MAP_ID, MAPS, DOORS, doorOpen, setDoorOpen, nearestDoor, FLOOR2_H, FLOOR2_Y, type MapId } from "@/lib/game";
 import { CharImg, EmoteIcon, EmoteWheel } from "./Art";
 import { Bubble } from "./Social";
 import { Joystick } from "./Joystick";
@@ -36,7 +35,9 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
   applyMap(map);
   const [onLift, setOnLift] = useState(false);
   const [riding, setRiding] = useState(false);
-  const liftRef = useRef<() => void>(() => {});
+  const liftRef = useRef<(dir?: "up" | "down") => void>(() => {});
+  const doorRef = useRef<(i?: number) => void>(() => {});
+  const [nearDoor, setNearDoor] = useState<{ i: number; open: boolean } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const joy = useRef({ x: 0, y: 0 });
   const keysDown = useRef<Record<string, boolean>>({});
@@ -60,7 +61,6 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
   const [scare, setScare] = useState(0);
   const ambushRef = useRef<() => void>(() => {});
 
-  const scareUrl = kuyangImg.url;
   const meP = players.find((p) => p.id === me)!;
   const amGhost = meP.role === "ghost";
 
@@ -90,7 +90,18 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
     let touchId: number | null = null, tx0 = 0, ty0 = 0;
     const onPD = (e: PointerEvent) => { if (e.pointerType === "mouse") return; touchId = e.pointerId; tx0 = e.clientX; ty0 = e.clientY; };
     const onPM = (e: PointerEvent) => { if (e.pointerId !== touchId) return; const d = toContent(e.clientX - tx0, e.clientY - ty0); look(d.x * 1.4, d.y * 1.4); tx0 = e.clientX; ty0 = e.clientY; };
+    let tapX = 0, tapY = 0;
     const onPU = (e: PointerEvent) => { if (e.pointerId === touchId) touchId = null; };
+    const onTapStart = (e: PointerEvent) => { tapX = e.clientX; tapY = e.clientY; };
+    // tap / click on a door or a lift button in the 3D world; with pointer lock, click aims at the crosshair
+    const onTapEnd = (e: PointerEvent) => {
+      if (Math.hypot(e.clientX - tapX, e.clientY - tapY) > 12) return;
+      const r = cv.getBoundingClientRect(); const locked = document.pointerLockElement === cv;
+      const hit = sc.pick(locked ? r.left + r.width / 2 : e.clientX, locked ? r.top + r.height / 2 : e.clientY);
+      if (!hit) return;
+      if (hit.startsWith("door:")) doorRef.current(Number(hit.slice(5))); else liftRef.current(hit as "up" | "down");
+    };
+    cv.addEventListener("pointerdown", onTapStart); cv.addEventListener("pointerup", onTapEnd);
     document.addEventListener("mousemove", onMouse); cv.addEventListener("click", onClick);
     cv.addEventListener("pointerdown", onPD); window.addEventListener("pointermove", onPM); window.addEventListener("pointerup", onPU);
     let toastTimer = 0;
@@ -120,6 +131,8 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
     });
     let droneAt = 0; const droneSt = { x: 0, y: 0, h: 0, yaw: 0 };
     ch.on("broadcast", { event: "drone" }, ({ payload }) => { Object.assign(droneSt, payload as typeof droneSt); droneAt = performance.now(); });
+    ch.on("broadcast", { event: "door" }, ({ payload }) => { const p = payload as { i: number; o: boolean }; setDoorOpen(p.i, !!p.o); });
+    ch.on("broadcast", { event: "lift" }, ({ payload }) => { const p = payload as { to: 1 | 2 }; if (!liftS.moving) startLift(p.to, false, false); });
     ch.on("broadcast", { event: "caught" }, ({ payload }) => setStatus((payload as { id: string }).id, "caught"));
     ch.on("broadcast", { event: "shout" }, ({ payload }) => { const l = live[(payload as { id: string }).id]; if (l) { l.shoutUntil = performance.now() + 2500; audio.shout(); } });
     const showEmote = (id: string, e: string, t?: string) => {
@@ -211,7 +224,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
           }
           if (MAP_ID === "hotel" && (ty < 500) !== (l.y < 500)) {
             const a = LIFTS[l.y < 500 ? 0 : 1]!, o = LIFTS[l.y < 500 ? 1 : 0]!;
-            if (Math.hypot(a.x - l.x, a.y - l.y) < 30) { l.x = l.tx = o.x; l.y = l.ty = o.y + (o.floor === 2 ? 40 : -40); }
+            if (Math.hypot(a.x - l.x, a.y - l.y) < 30) { const ex = liftExit(o); l.x = l.tx = ex.x; l.y = l.ty = ex.y; }
             tx = a.x; ty = a.y;
           }
           let ang = Math.atan2(ty - l.y, tx - l.x) + b.dir;
@@ -242,16 +255,63 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       if (meL.status !== "alive" || performance.now() < meL.shoutUntil) return;
       meL.shoutUntil = performance.now() + 2500; audio.shout(); send("shout", { id: me });
     };
-    const kd = (e: KeyboardEvent) => { keysDown.current[e.key.toLowerCase()] = true; if (e.key === " " ) shoutRef.current(); if (e.key.startsWith("Arrow")) e.preventDefault(); };
+    const kd = (e: KeyboardEvent) => { keysDown.current[e.key.toLowerCase()] = true; if (e.key === " " ) shoutRef.current(); if (e.key.toLowerCase() === "e") { if (liftAt(meL.x, meL.y)) liftRef.current(); else doorRef.current(); } if (e.key.startsWith("Arrow")) e.preventDefault(); };
     const ku = (e: KeyboardEvent) => { keysDown.current[e.key.toLowerCase()] = false; };
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku);
 
-    let liftOn = false, liftBusy = false;
-    liftRef.current = () => {
-      const l = liftAt(meL.x, meL.y); if (!l || liftBusy) return;
-      const o = LIFTS.find((x) => x !== l)!;
-      liftBusy = true; setRiding(true); audio.creak();
-      window.setTimeout(() => { meL.x = meL.tx = o.x; meL.y = meL.ty = o.y + (o.floor === 2 ? 40 : -40); liftBusy = false; setRiding(false); notify(`Lift tiba di Lantai ${o.floor}`); }, 1600);
+    let liftOn = false;
+    // ---- doors: closed until someone clicks them (synced over broadcast)
+    const toggleDoor = (i: number, open: boolean) => { setDoorOpen(i, open); send("door", { i, o: open }); };
+    doorRef.current = (i?: number) => {
+      if (meL.status !== "alive") return;
+      const idx = i ?? nearestDoor(meL.x, meL.y, 110); const d = DOORS[idx];
+      if (!d || Math.hypot(d.x - meL.x, d.y - meL.y) > 130) { if (i === undefined) notify("Dekati pintu dulu."); return; }
+      toggleDoor(idx, !doorOpen[idx]);
+    };
+    // ---- hotel lift: one physical cabin riding a vertical shaft between floor 1 (0 m) and floor 2 (FLOOR2_H)
+    const floorOf = (y: number) => (y >= FLOOR2_Y ? 2 : 1) as 1 | 2;
+    const liftS = { f: 1 as 1 | 2, to: 1 as 1 | 2, y: 0, from: 0, t0: 0, moving: false, riding: false, doors: [0, 0] };
+    const LIFT_MS = 2600;
+    function startLift(to: 1 | 2, riding: boolean, broadcast = true) {
+      if (liftS.moving || (liftS.f === to && !riding)) return;
+      liftS.moving = true; liftS.riding = riding; liftS.to = to; liftS.from = liftS.y; liftS.t0 = performance.now();
+      audio.creak(); if (riding) setRiding(true);
+      if (broadcast) send("lift", { to });
+    }
+    liftRef.current = (dir?: "up" | "down") => {
+      const l = liftAt(meL.x, meL.y); if (!l || liftS.moving || meL.status !== "alive") return;
+      if (liftS.f !== l.floor) { notify("Tunggu lift datang..."); return; }
+      const to = (l.floor === 1 ? 2 : 1) as 1 | 2;
+      if (dir && (dir === "up") !== (to === 2)) { notify(`Kamu sudah di Lantai ${l.floor}`); return; }
+      startLift(to, true);
+    };
+    const runLift = (now: number, dt: number) => {
+      if (MAP_ID !== "hotel") return;
+      if (liftS.moving) {
+        const k = Math.min(1, (now - liftS.t0) / LIFT_MS), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+        liftS.y = liftS.from + ((liftS.to === 2 ? FLOOR2_H : 0) - liftS.from) * e;
+        if (k >= 1) {
+          liftS.moving = false; liftS.f = liftS.to;
+          if (liftS.riding) { const o = LIFTS[liftS.to - 1]!; meL.x = meL.tx = o.x; meL.y = meL.ty = o.y; liftS.riding = false; setRiding(false); audio.pickup(); notify(`Ding! Lantai ${liftS.to}`); }
+        }
+      } else if (meL.status === "alive") {
+        // call the cabin when you walk up to the landing on another floor
+        const mf = floorOf(meL.y), pad = LIFTS[mf - 1]!;
+        if (liftS.f !== mf && Math.hypot(pad.x - meL.x, pad.y - meL.y) < 150) startLift(mf, false);
+      }
+      LIFTS.forEach((pad, i) => {
+        const here = !liftS.moving && liftS.f === i + 1 && Math.hypot(pad.x - meL.x, pad.y - meL.y) < 160;
+        liftS.doors[i]! += ((here ? 1 : 0) - liftS.doors[i]!) * Math.min(1, dt * 3);
+      });
+    };
+    let doorT = 0;
+    const botDoors = (now: number) => {
+      // bots open closed doors they walk up to (host only, synced like a player click)
+      if (now - doorT < 250) return; doorT = now;
+      for (const p of all) if (p.id === BOT_GHOST_ID || p.id.startsWith(BOT_MATE_PREFIX)) {
+        const l = live[p.id]!; if (l.status !== "alive") continue;
+        const i = nearestDoor(l.x, l.y, 75); if (i >= 0 && !doorOpen[i]) toggleDoor(i, true);
+      }
     };
     let raf = 0, last = performance.now(), hudT = 0;
     const loop = (now: number) => {
@@ -268,7 +328,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       let ix = (k["d"] || k["arrowright"] ? 1 : 0) - (k["a"] || k["arrowleft"] ? 1 : 0) + joy.current.x;
       let iy = (k["s"] || k["arrowdown"] ? 1 : 0) - (k["w"] || k["arrowup"] ? 1 : 0) + joy.current.y;
       const mag = Math.hypot(ix, iy); if (mag > 1) { ix /= mag; iy /= mag; }
-      const canMove = !countdown && !ended && meL.status === "alive" && now > stunUntil;
+      const canMove = !countdown && !ended && meL.status === "alive" && now > stunUntil && !liftS.riding;
       if (walkTo && canMove && now < walkTo.until && Math.hypot(walkTo.x - meL.x, walkTo.y - meL.y) > 38) {
         const a = Math.atan2(walkTo.x - meL.x, walkTo.y - meL.y); meL.yaw = a + Math.PI;
         ix = 0; iy = -1;
@@ -282,12 +342,14 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
         if (now - lastStep > (amGhost ? 520 : 330)) { lastStep = now; if (!amGhost) audio.step(); }
       }
       meL.tx = meL.x; meL.ty = meL.y;
-      const lf = liftAt(meL.x, meL.y);
+      runLift(now, dt);
+      const lf = liftAt(meL.x, meL.y) && liftS.f === floorOf(meL.y) && !liftS.moving;
       if (!!lf !== liftOn) { liftOn = !!lf; setOnLift(liftOn); }
       for (const [id, l] of Object.entries(live)) if (id !== me) { l.x += (l.tx - l.x) * Math.min(1, dt * 12); l.y += (l.ty - l.y) * Math.min(1, dt * 12); }
 
       if (bot && isHost && !countdown && !ended) runBot(now, dt);
       if (mates.length && isHost && !countdown && !ended) runMates(now, dt);
+      if (isHost && !countdown && !ended) botDoors(now);
       if (now - mapT > 120) { mapT = now; drawMap(); }
       const npcs = npcsAt(t);
       if (!amGhost && meL.status === "alive" && !countdown && !ended) {
@@ -313,7 +375,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       if (!amGhost && gl && meL.status === "alive" && !countdown && !ended) {
         const d = Math.hypot(gl.x - meL.x, gl.y - meL.y);
         const ang = Math.atan2(gl.x - meL.x, gl.y - meL.y) + Math.PI; const diff = Math.abs(((ang - meL.yaw) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        if (d < 130 && (lastGhostD - d > 60 || diff < 0.7) && now > scareCd) { scareCd = now + 15000; stunUntil = now + 1500; audio.kuyang(); setScare(Math.random()); setTimeout(() => setScare(0), 1300); }
+        if (d < 130 && (lastGhostD - d > 60 || diff < 0.7) && now > scareCd) { scareCd = now + 15000; stunUntil = now + 1500; audio.kuyang(); sc.scare(t); setScare(Math.random()); setTimeout(() => setScare(0), 1400); }
         lastGhostD = d;
       }
 
@@ -333,10 +395,12 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       let cam = meL;
       if (meL.status !== "alive") { const alive = Object.entries(live).find(([id, l]) => l.status === "alive" && all.find((p) => p.id === id)?.role === "hunter"); if (alive) cam = alive[1]; }
       const fp = cam === meL;
-      sc.frame({ dt, t, cam, yaw: fp ? meL.yaw : cam.yaw, pitch: fp ? pitch : 0, moving: meL.moving, battery: meL.battery, near, keyMask, batMask, npcs, firstPerson: fp && meL.status === "alive", drone: now - droneAt < 2000 ? droneSt : null,
-        others: all.filter((p) => p.id !== me).map((p) => { const l = live[p.id]!; return { id: p.id, x: l.x, y: l.y, yaw: l.yaw, ghost: p.role === "ghost", shouting: now < l.shoutUntil, visible: l.status === "alive" && l !== cam, moving: l.moving, pitch: l.pitch, emote: now < l.emoteUntil && !(PAIR_EMOTES.includes(l.emote ?? "") && l.moving) ? l.emote : null }; }) });
+      sc.frame({ dt, t, cam, yaw: fp ? meL.yaw : cam.yaw, pitch: fp ? pitch : 0, moving: meL.moving, battery: meL.battery, near, keyMask, batMask, npcs, firstPerson: fp && meL.status === "alive", lift: MAP_ID === "hotel" ? { y: liftS.y, doors: liftS.doors, dir: liftS.to === 2 ? 1 : -1, riding: liftS.riding && fp } : null, drone: now - droneAt < 2000 ? droneSt : null,
+        others: all.filter((p) => p.id !== me).map((p) => { const l = live[p.id]!; return { id: p.id, x: l.x, y: l.y, yaw: l.yaw, ghost: p.role === "ghost", shouting: now < l.shoutUntil, visible: l.status === "alive" && l !== cam, moving: l.moving, pitch: l.pitch, emote: now < l.emoteUntil && !(PAIR_EMOTES.includes(l.emote ?? "") && l.moving) ? l.emote : null, ...(liftS.moving && liftAt(l.x, l.y) ? { liftY: liftS.y } : {}) }; }) });
       if (now - hudT > 200) {
         hudT = now;
+        const di = meL.status === "alive" ? nearestDoor(meL.x, meL.y, 110) : -1;
+        setNearDoor((cur) => { const nx = di >= 0 ? { i: di, open: !!doorOpen[di] } : null; return cur?.i === nx?.i && cur?.open === nx?.open ? cur : nx; });
         setHud({ time: Math.ceil(timeLeft), keys: [0, 1, 2, 3, 4].filter((i) => keyMask & (1 << i)).length, battery: meL.battery, near, room: roomAt(meL.x, meL.y), cd: countdown ? Math.ceil((startedAt - Date.now()) / 1000) : 0, statuses: Object.fromEntries(Object.entries(live).map(([id, l]) => [id, l.status])) });
       }
     };
@@ -345,7 +409,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
     return () => {
       cancelAnimationFrame(raf); clearTimeout(toastTimer); sc.dispose();
       window.removeEventListener("resize", onResize); document.removeEventListener("mousemove", onMouse); cv.removeEventListener("click", onClick);
-      cv.removeEventListener("pointerdown", onPD); window.removeEventListener("pointermove", onPM); window.removeEventListener("pointerup", onPU);
+      cv.removeEventListener("pointerdown", onPD); cv.removeEventListener("pointerdown", onTapStart); cv.removeEventListener("pointerup", onTapEnd); window.removeEventListener("pointermove", onPM); window.removeEventListener("pointerup", onPU);
       if (document.pointerLockElement) void document.exitPointerLock();
       window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku);
       void supabase.removeChannel(ch); audio.stopAll();
@@ -383,8 +447,13 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       <div className="absolute left-1/2 top-12 -translate-x-1/2 text-xs text-muted-foreground">{amGhost ? "HANTU ASAP" : "PEMBURU"} - {hud.room}</div>
       <div className="pointer-events-none absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" />
       {hud.near > 0.2 && <div className="pointer-events-none absolute inset-0 animate-pulse" style={{ background: `repeating-linear-gradient(0deg, rgba(255,255,255,${hud.near * 0.05}) 0 1px, transparent 1px 3px)`, mixBlendMode: "screen" }} />}
-      {onLift && !riding && hud.cd === 0 && <button onClick={() => liftRef.current()} className="absolute bottom-40 left-1/2 z-20 -translate-x-1/2 rounded-lg border-2 border-gold bg-card/90 px-5 py-3 font-horror text-xl text-gold">{hud.room.includes("Lt.1") ? "▲ NAIK KE LANTAI 2" : "▼ TURUN KE LANTAI 1"}</button>}
-      {riding && <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-void/90"><div className="text-center"><div className="font-horror text-4xl text-gold animate-pulse">LIFT BERGERAK...</div><div className="mt-2 text-sm text-muted-foreground">Ding!</div></div></div>}
+      {onLift && !riding && hud.cd === 0 && <div className="absolute bottom-40 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-xl border-2 border-gold bg-card/90 p-2">
+        <span className="px-1 text-xs font-bold text-gold">LIFT</span>
+        <button onPointerDown={() => liftRef.current("up")} aria-label="Naik" className="flex size-12 items-center justify-center rounded-full bg-chart-4 text-xl font-bold text-background">▲</button>
+        <button onPointerDown={() => liftRef.current("down")} aria-label="Turun" className="flex size-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">▼</button>
+      </div>}
+      {!onLift && nearDoor && hud.cd === 0 && <button onPointerDown={() => doorRef.current(nearDoor.i)} className="absolute bottom-40 left-1/2 z-20 -translate-x-1/2 rounded-lg border-2 border-gold bg-card/90 px-5 py-2 font-horror text-lg text-gold">{nearDoor.open ? "TUTUP PINTU" : "BUKA PINTU"}</button>}
+      {riding && <div className="pointer-events-none absolute left-1/2 top-24 z-30 -translate-x-1/2 rounded bg-void/70 px-3 py-1 font-horror text-xl text-gold animate-pulse">LIFT BERGERAK...</div>}
       {hud.cd > 0 && <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-void/60 text-center"><div className="w-full bg-primary/80 py-2 font-horror text-2xl tracking-widest text-primary-foreground">PERTANDINGAN DIMULAI · {MAPS.find((m) => m.id === map)?.nama.toUpperCase()}</div><div key={hud.cd} className="mt-4 font-horror text-[9rem] leading-none text-gold drop-shadow-[0_0_30px_hsl(350_80%_40%)] animate-in zoom-in-50 duration-300">{hud.cd}</div><p className="mt-3 px-6 text-foreground">{amGhost ? "KAMU HANTU ASAP. Kagetkan para pemburu!" : "KAMU PEMBURU. Cari 5 kunci dan kabur!"}</p></div>}
       {toast && <div className="absolute left-1/2 top-20 -translate-x-1/2 rounded-lg border border-gold bg-card/90 px-4 py-2 text-center text-sm font-bold text-gold">{toast}</div>}
       {spectating && !outcome && <div className="absolute inset-x-0 top-28 text-center font-horror text-2xl text-foreground">KAMU JADI PENONTON</div>}
@@ -396,7 +465,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       </div>
       <EmoteWheel open={emoteOpen} onClose={() => setEmoteOpen(false)} onPick={(id) => emoteRef.current(id)} />
       {amGhost && !spectating && <button onPointerDown={() => ambushRef.current()} className="absolute bottom-8 right-6 flex size-20 flex-col items-center justify-center rounded-full border-2 border-primary bg-blood/80 text-[10px] font-bold text-primary-foreground glow-blood"><Ghost className="size-6" />KAGETKAN</button>}
-      {scare > 0 && <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-void/70"><img src={scareUrl} alt="" className="hm-scare h-[90vh] max-w-none rounded-2xl object-cover" style={{ filter: "drop-shadow(0 0 40px hsl(350 90% 40%))" }} /></div>}
+      {scare > 0 && <div className="pointer-events-none absolute inset-0 z-50 animate-pulse" style={{ boxShadow: "inset 0 0 160px hsl(350 90% 30% / .9)" }} />}
       {/* minimap */}
       <div className="pointer-events-none absolute right-2 top-12 rounded-md border border-border bg-void/70 p-1">
         <canvas ref={mapRef} width={150} height={100} className="block h-[100px] w-[150px]" />
@@ -419,7 +488,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
           <Megaphone className="size-6" />TOLONG!
         </button>
       )}
-      {!isTouch && <div className="absolute bottom-3 left-3 text-xs text-muted-foreground">Klik layar lalu gerakkan mouse untuk melihat. WASD / Panah untuk jalan{!amGhost && ", Spasi untuk teriak"}</div>}
+      {!isTouch && <div className="absolute bottom-3 left-3 text-xs text-muted-foreground">Klik layar lalu gerakkan mouse untuk melihat. WASD / Panah untuk jalan, klik pintu atau tekan E untuk membuka{!amGhost && ", Spasi untuk teriak"}</div>}
       {outcome && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-void/90 p-6 text-center">
           <h1 className={`font-horror text-drip text-5xl ${won ? "text-gold" : "text-primary"}`}>
