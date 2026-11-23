@@ -28,3 +28,14 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Players sign in with an ID card (`profiles.kode_id` + name) through SECURITY DEFINER RPCs, not Cloud Auth; the session is the profile kept in localStorage. Why: the game is intentionally "no email, no password".
+- Private chat and friendships are only reachable through SECURITY DEFINER RPCs that check `id + kode_id`; world chat is a public table read limited to the last 24h and pruned on each send. Why: there is no Cloud Auth session to scope RLS by.
+- When no player picks the ghost, the room host's client simulates the AI ghost (`BOT_GHOST_ID`) and broadcasts its position like a player. Why: keeps the game serverless and in sync with existing realtime broadcast.
+- Character art is SVG strings rendered inline (`CharImg`) with CSS-animated parts (`hm-lid`, `hm-armL/R`, `hm-body`); emotes are CSS classes, not emoji.
+- Admin is the first profile, stored in `admin_profiles` (no client access) and checked via the `is_admin(id, kode_id)` RPC. Why: no Cloud Auth; roles must not live on profiles or in localStorage.
+- The admin drone spectates via the same `game-<code>` broadcast channel and sends a `drone` event that players' scenes render. Why: no extra server state.
+- Maps share one room grid; `applyMap(id)` in game.ts swaps the live `ROOMS/WALLS/DOORS` bindings and scene3d draws per-map atmosphere from `opts.map`; the room's map lives in `rooms.map`. Why: keys, spawns and ghost paths stay valid on every map.
+- Solo/partial squads are padded to 4 hunters with `squadBots()` (deterministic ids `bot-mate-N`), simulated by the host and broadcast as normal `pos` events. Why: same serverless pattern as the AI ghost.

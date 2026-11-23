@@ -1,0 +1,72 @@
+[
+ {
+  "capability": "code",
+  "source": "github danibuton1-bit/hant-malam-online-2 (TanStack Start, same Lovable template)",
+  "outcome": "migrate",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "schema",
+  "source": "drizzle/migrations 0000-0005 (profiles, rooms, players, game_state, friendships, chat_messages, admin_profiles, RPCs)",
+  "outcome": "migrate",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "records",
+  "source": "old backend profiles/friendships/admin_profiles (rooms, players, game_state, chat are temporary)",
+  "outcome": "migrate",
+  "status": "pending",
+  "next_action": "request CSV/JSON export of profiles, friendships, admin_profiles"
+ },
+ {
+  "capability": "auth identities",
+  "source": "custom ID-card login (profiles.kode_id + nama/password via RPC), no auth.users",
+  "outcome": "preserve app's own ID-card login on Lovable Cloud",
+  "status": "pending",
+  "next_action": "import profiles export so existing ID cards keep working"
+ },
+ {
+  "capability": "authorization",
+  "source": "open RLS on game tables, SECURITY DEFINER RPCs, admin_profiles",
+  "outcome": "migrate",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "realtime",
+  "source": "presence, broadcast, postgres_changes on players/rooms/chat_messages",
+  "outcome": "migrate",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "uploaded files",
+  "source": "none detected",
+  "outcome": "none",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "external providers / webhooks / schedules",
+  "source": "none detected",
+  "outcome": "none",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "secrets",
+  "source": ".env only held old backend URL/publishable key",
+  "outcome": "replaced by Lovable Cloud",
+  "status": "verified",
+  "next_action": ""
+ },
+ {
+  "capability": "verification",
+  "source": "",
+  "outcome": "",
+  "status": "verified",
+  "next_action": "18 tests pass; created ID card in preview (844x390), reached home; test card removed"
+ }
+]
