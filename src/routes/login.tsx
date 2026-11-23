@@ -56,21 +56,25 @@ function Login() {
   }
 
   return (
-    <main className="mx-auto min-h-full max-w-md space-y-6 px-5 py-6">
-      <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground"><ArrowLeft className="size-4" /> Kembali</Link>
-      <h1 className="font-horror text-drip text-4xl text-primary">LOGIN ID CARD</h1>
-      <label className="flex h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent bg-card text-center">
-        <Upload className="size-8 text-primary" />
-        <span>Upload foto / screenshot ID Card</span>
-        <input type="file" accept="image/*" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
-      </label>
-      <div className="text-center text-xs text-muted-foreground">atau ketik manual</div>
-      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void enter(kode, nama); }}>
-        <div className="space-y-2"><Label htmlFor="kode">Kode ID</Label><Input id="kode" value={kode} onChange={(e) => setKode(e.target.value.toUpperCase())} placeholder="HM-1234" className="h-12 tracking-widest" /></div>
-        <div className="space-y-2"><Label htmlFor="nm">Nama</Label><Input id="nm" value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama di ID Card" className="h-12" /></div>
-        {needPass && <div className="space-y-2"><Label htmlFor="pw">Password Akun</Label><PasswordInput id="pw" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Password" className="h-12" autoFocus /></div>}
-        {err && <p className="text-sm text-destructive">{err}</p>}
-        <Button type="submit" size="lg" className="h-14 w-full text-lg glow-blood" disabled={busy || !/^HM-\d{4}$/.test(kode) || !nama.trim() || (needPass && !pass)}>{busy ? "Mengecek..." : "MASUK"}</Button>
+    <main className="relative flex h-full justify-center overflow-hidden px-5 pb-3 pt-9 flex-row items-center gap-6">
+      <Link to="/" className="absolute left-3 top-2 inline-flex items-center gap-1 text-sm text-muted-foreground"><ArrowLeft className="size-4" /> Kembali</Link>
+      <div className="flex flex-col gap-2 w-[40%]">
+        <h1 className="font-horror text-drip text-3xl leading-none text-primary">LOGIN ID CARD</h1>
+        <label className="flex h-[clamp(4rem,18cqh,8rem)] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent bg-card text-center text-sm">
+          <Upload className="size-6 text-primary" />
+          <span>Upload foto ID Card</span>
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+        </label>
+      </div>
+      <form className="flex flex-col gap-2 w-[45%] max-w-sm" onSubmit={(e) => { e.preventDefault(); void enter(kode, nama); }}>
+        <div className="text-xs text-muted-foreground">atau ketik manual</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label htmlFor="kode" className="text-xs">Kode ID</Label><Input id="kode" value={kode} onChange={(e) => setKode(e.target.value.toUpperCase())} placeholder="HM-1234" className="h-10 tracking-widest" /></div>
+          <div><Label htmlFor="nm" className="text-xs">Nama</Label><Input id="nm" value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama di ID Card" className="h-10" /></div>
+        </div>
+        {needPass && <div><Label htmlFor="pw" className="text-xs">Password Akun</Label><PasswordInput id="pw" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Password" className="h-10" autoFocus /></div>}
+        {err && <p className="text-xs text-destructive">{err}</p>}
+        <Button type="submit" size="lg" className="h-12 w-full glow-blood" disabled={busy || !/^HM-\d{4}$/.test(kode) || !nama.trim() || (needPass && !pass)}>{busy ? "Mengecek..." : "MASUK"}</Button>
       </form>
     </main>
   );

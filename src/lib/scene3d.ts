@@ -4,6 +4,8 @@ import { BATTERIES, DOORS, DOOR_W, EXIT, KEYS, LIFTS, ROOMS, WALLS, WORLD, type 
 import { audio } from "./audio";
 import { CHARACTERS, isChar, type CharId } from "./art";
 import { buildAvatar, nameTag, type Avatar } from "./avatar3d";
+import { buildKuyang, type Kuyang } from "./kuyang3d";
+import { getGfx, pixelRatioFor } from "./graphics";
 
 export const U = 1 / 50;
 /** Weak/old Android phones: lower resolution, cheaper lights and materials, 30 fps. */
@@ -123,7 +125,7 @@ type Ent = { sprite: THREE.Sprite; light?: THREE.PointLight };
 export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "ghost"; amGhost: boolean; imgs: Record<string, string>; drone?: boolean; map?: MapId }) {
   const MAP = opts.map ?? "rumah";
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE && !LOW_END, powerPreference: LOW_END ? "low-power" : "high-performance" });
-  renderer.setPixelRatio(LOW_END ? 0.75 : MOBILE ? Math.min(1.25, window.devicePixelRatio || 1) : Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(pixelRatioFor(getGfx(), window.devicePixelRatio || 1, !!MOBILE, LOW_END));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = LOW_END ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
   const scene = new THREE.Scene();
@@ -200,8 +202,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
   };
   const keys = KEYS.map((k) => { const s = sprite("key", 0.6, 0.3); s.position.set(k.x * U, 0.6, k.y * U); const l = new THREE.PointLight(0xffc840, 0.8, 2.5); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
   const bats = BATTERIES.map((b) => { const s = sprite("bat", 0.25, 0.4); s.position.set(b.x * U, 0.3, b.y * U); const l = new THREE.PointLight(0x60ff80, 0.5, 1.8); l.position.copy(s.position); if (!LOW_END) scene.add(l); return { sprite: s, light: l } as Ent; });
-  const npcSprites: Record<string, THREE.Sprite> = {};
-  const players: Record<string, { sprite: THREE.Sprite | null; av: Avatar | null; tag: THREE.Sprite | null; light: THREE.SpotLight; target: THREE.Object3D; shout: THREE.Sprite }> = {};
+  const npcKuyangs: Record<string, Kuyang> = {};
+  const players: Record<string, { sprite: THREE.Sprite | null; av: Avatar | null; ku: Kuyang | null; tag: THREE.Sprite | null; light: THREE.SpotLight; target: THREE.Object3D; shout: THREE.Sprite }> = {};
 
   // flashlight (attached to camera)
   const flash = new THREE.SpotLight(0xfff1d0, 30, 22, 0.42, 0.45, 1.6);
@@ -266,12 +268,14 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       if (players[id]) return;
       const av = isHunter && isChar(k) ? buildAvatar(k, Mat as unknown as (p: THREE.MeshStandardMaterialParameters) => THREE.Material, LOW_END) : null;
       if (av) scene.add(av.root);
-      const s = av ? null : sprite(k, isHunter ? 1.15 : 1.9, isHunter ? 1.6 : 2.4);
+      const ku = !isHunter ? buildKuyang(LOW_END) : null;
+      if (ku) scene.add(ku.root);
+      const s = av || ku ? null : sprite(k, 1.15, 1.6);
       const tag = isHunter && name ? nameTag(name) : null; if (tag) scene.add(tag);
       const light = new THREE.SpotLight(0xfff1d0, isHunter ? 12 : 0, 14, 0.4, 0.5, 1.6);
       const target = new THREE.Object3D(); scene.add(light, target); light.target = target;
       const shout = sprite("ex", 0.35, 0.5); shout.visible = false;
-      players[id] = { sprite: s, av, tag, light, target, shout };
+      players[id] = { sprite: s, av, ku, tag, light, target, shout };
     },
     frame(st: {
       dt: number; t: number; cam: { x: number; y: number }; yaw: number; pitch: number; moving: boolean; battery: number; near: number;
@@ -316,8 +320,11 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
       bats.forEach((b, i) => { const on = !(st.batMask & (1 << i)); b.sprite.visible = on; b.light!.visible = on; });
       st.npcs.forEach((n, i) => {
         const key = `npc${i}`;
-        const s = (npcSprites[key] ??= sprite(n.kind === "pocong" ? "pocong" : n.kind === "hoodie" ? "hoodie" : "kunti", 1.1, 1.9));
-        s.position.set(n.x * U, 0.95 + (n.kind === "pocong" ? Math.abs(Math.sin(st.t * 4)) * 0.25 : Math.sin(st.t * 2) * 0.1 + 0.2), n.y * U);
+        let k = npcKuyangs[key];
+        if (!k) { k = npcKuyangs[key] = buildKuyang(true); scene.add(k.root); }
+        k.root.position.x = n.x * U; k.root.position.z = n.y * U;
+        k.root.rotation.y = Math.atan2(st.cam.x * U - k.root.position.x, st.cam.y * U - k.root.position.z);
+        k.update({ t: st.t + i * 1.7, dt: st.dt, moving: true });
       });
       for (const o of st.others) {
         const p = players[o.id]; if (!p) continue;
@@ -325,6 +332,10 @@ export function createScene(canvas: HTMLCanvasElement, opts: { me: CharId | "gho
         if (p.av) {
           p.av.root.visible = o.visible; p.av.root.position.set(o.x * U, 0, o.y * U); p.av.root.rotation.y = o.yaw;
           if (o.visible) p.av.update({ dt: st.dt, t: st.t, moving: o.moving, pitch: o.pitch, emote: o.emote });
+        }
+        if (p.ku) {
+          p.ku.root.visible = o.visible; p.ku.root.position.x = o.x * U; p.ku.root.position.z = o.y * U; p.ku.root.rotation.y = o.yaw + Math.PI;
+          if (o.visible) p.ku.update({ t: st.t, dt: st.dt, moving: o.moving });
         }
         if (p.sprite) {
           p.sprite.visible = o.visible;

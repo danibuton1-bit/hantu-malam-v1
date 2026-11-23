@@ -40,3 +40,12 @@ describe("assignRoles", () => {
     expect(r).toEqual({ roles: { a: "hunter" }, bot: true });
   });
 });
+
+import { describe as d2, it as i2, expect as e2 } from "vitest";
+import { move as mv2, WALLS as W2, circleHitsRect as hit2 } from "./game";
+d2("diagonal collision", () => {
+  i2("never ends inside a wall when moving diagonally", () => {
+    let p = { x: 250, y: 260 };
+    for (let k = 0; k < 400; k++) { p = mv2(p.x, p.y, 7, 7); e2(W2.some((w) => hit2(p.x, p.y, 18, w))).toBe(false); }
+  });
+});

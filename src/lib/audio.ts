@@ -1,3 +1,4 @@
+import { getSound } from "./sound-settings";
 // Every sound is synthesized with the Web Audio API — no audio files.
 class HorrorAudio {
   ctx: AudioContext | null = null;
@@ -66,16 +67,34 @@ class HorrorAudio {
   }
   scream() {
     if (!this.ctx || !this.master) return;
+    const vol = getSound().pocong; if (vol <= 0) return;
     const t = this.ctx.currentTime;
     for (const base of [620, 760]) {
       const o = this.ctx.createOscillator(); o.type = "sawtooth";
       o.frequency.setValueAtTime(base, t); o.frequency.exponentialRampToValueAtTime(base * 1.8, t + 0.25); o.frequency.exponentialRampToValueAtTime(base * 0.6, t + 1.2);
       const lfo = this.ctx.createOscillator(); lfo.frequency.value = 9; const lg = this.ctx.createGain(); lg.gain.value = 40;
       lfo.connect(lg).connect(o.frequency);
-      const g = this.ctx.createGain(); this.env(g, t, 0.02, 0.18, 1.2);
+      const g = this.ctx.createGain(); this.env(g, t, 0.02, 0.18 * vol, 1.2);
       o.connect(g).connect(this.master); o.start(t); lfo.start(t); o.stop(t + 1.3); lfo.stop(t + 1.3);
     }
     this.noise(1, 2500, 0.8, 0.2);
+  }
+  /** Kuyang screech: shrill rising shriek + raspy cackle. */
+  kuyang() {
+    if (!this.ctx || !this.master) return;
+    const vol = getSound().kuyang; if (vol <= 0) return;
+    const t = this.ctx.currentTime;
+    for (const [base, p] of [[900, 0.22], [1350, 0.14], [600, 0.12]] as const) {
+      const o = this.ctx.createOscillator(); o.type = "sawtooth";
+      o.frequency.setValueAtTime(base * 0.7, t); o.frequency.exponentialRampToValueAtTime(base * 2.2, t + 0.35); o.frequency.exponentialRampToValueAtTime(base * 1.4, t + 1.6);
+      const lfo = this.ctx.createOscillator(); lfo.frequency.value = 14; const lg = this.ctx.createGain(); lg.gain.value = base * 0.08;
+      lfo.connect(lg).connect(o.frequency);
+      const f = this.ctx.createBiquadFilter(); f.type = "peaking"; f.frequency.value = 2400; f.gain.value = 12;
+      const g = this.ctx.createGain(); this.env(g, t, 0.015, p * vol, 1.7);
+      o.connect(f).connect(g).connect(this.master); o.start(t); lfo.start(t); o.stop(t + 1.9); lfo.stop(t + 1.9);
+    }
+    this.noise(1.4, 3200, 0.7, 0.28 * vol);
+    for (let i = 0; i < 5; i++) setTimeout(() => this.noise(0.08, 1100, 3, 0.25 * vol), 1500 + i * 130);
   }
   shout() { this.tone(440, 0.3, "square", 0.12); setTimeout(() => this.tone(523, 0.35, "square", 0.12), 200); }
   setBreath(level: number) {
@@ -101,7 +120,9 @@ class HorrorAudio {
       const f = notes[(i * 3 + (i % 2)) % notes.length]!;
       i++;
       const t = this.ctx.currentTime;
-      for (const [mult, p] of [[1, 0.09], [2, 0.03], [0.5, 0.05]] as const) {
+      const mv = getSound().music;
+      for (const [mult, p] of [[1, 0.09 * mv], [2, 0.03 * mv], [0.5, 0.05 * mv]] as const) {
+        if (p <= 0) continue;
         const o = this.ctx.createOscillator(); o.type = "sine"; o.frequency.value = f * mult;
         const g = this.ctx.createGain(); this.env(g, t, 0.01, p, 2.6);
         o.connect(g).connect(this.master); o.start(t); o.stop(t + 2.8);

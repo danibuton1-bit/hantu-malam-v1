@@ -5,6 +5,7 @@ import { useApp } from "@/components/AppState";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/admin";
+import { SoundManager } from "@/components/SoundManager";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -58,6 +59,7 @@ function AdminPage() {
           </div>
         ))}
       </section>
+      <SoundManager />
     </main>
   );
 }

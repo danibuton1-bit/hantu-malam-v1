@@ -11,7 +11,7 @@ const img = (src: string) =>
   });
 
 /** Draws the official ID card to a PNG data URL (same image for display and download). */
-export async function renderIdCard(p: Profile): Promise<string> {
+export async function renderIdCard(p: Profile, admin = false): Promise<string> {
   await document.fonts?.ready;
   const W = 1000, H = 620;
   const c = document.createElement("canvas");
@@ -20,12 +20,20 @@ export async function renderIdCard(p: Profile): Promise<string> {
   const bg = g.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, "#1a0610"); bg.addColorStop(0.6, "#12081c"); bg.addColorStop(1, "#050307");
   g.fillStyle = bg; roundRect(g, 0, 0, W, H, 36); g.fill();
-  g.strokeStyle = "#8b0d17"; g.lineWidth = 8; roundRect(g, 10, 10, W - 20, H - 20, 30); g.stroke();
-  g.fillStyle = "#8b0d17"; g.fillRect(10, 30, W - 20, 96);
+  const gold = g.createLinearGradient(0, 0, W, H);
+  gold.addColorStop(0, "#fff1a8"); gold.addColorStop(0.35, "#d4a017"); gold.addColorStop(0.6, "#fff4c2"); gold.addColorStop(1, "#a87400");
+  g.strokeStyle = admin ? gold : "#8b0d17"; g.lineWidth = admin ? 14 : 8; roundRect(g, 10, 10, W - 20, H - 20, 30); g.stroke();
+  g.fillStyle = admin ? gold : "#8b0d17"; g.fillRect(10, 30, W - 20, 96);
   g.fillStyle = "#fff"; g.font = "56px Creepster, fantasy"; g.textBaseline = "middle";
   g.fillText("HANTU MALAM", 48, 80);
   g.font = "22px 'Special Elite', monospace"; g.textAlign = "right";
-  g.fillText("OFFICIAL ID", W - 48, 80); g.textAlign = "left";
+  g.fillText(admin ? "GAME MASTER" : "OFFICIAL ID", W - 48, 80); g.textAlign = "left";
+  if (admin) {
+    // crown badge
+    g.fillStyle = gold; g.beginPath();
+    g.moveTo(760, 230); g.lineTo(770, 170); g.lineTo(805, 205); g.lineTo(848, 150); g.lineTo(891, 205); g.lineTo(926, 170); g.lineTo(936, 230); g.closePath(); g.fill();
+    g.fillStyle = "#1a0610"; g.font = "bold 20px 'Special Elite', monospace"; g.textAlign = "center"; g.fillText("ADMIN", 848, 218); g.textAlign = "left";
+  }
 
   // avatar
   g.fillStyle = "#2a1030"; roundRect(g, 48, 160, 280, 340, 20); g.fill();

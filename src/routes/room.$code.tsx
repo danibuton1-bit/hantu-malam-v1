@@ -2,7 +2,7 @@ import { MicButton } from "@/components/MicButton";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { ArrowLeft, Crown, Ghost } from "lucide-react";
+import { ArrowLeft, Crown } from "lucide-react";
 import { CharImg, EmoteIcon, EmoteWheel } from "@/components/Art";
 import { SocialPanel } from "@/components/Social";
 import { EMOTE_MS, PAIR_EMOTES } from "@/lib/emotes";
@@ -15,6 +15,8 @@ import { Game, type GamePlayer } from "@/components/Game";
 import { MuteButton } from "@/components/MuteButton";
 import { ProfileCorner } from "@/components/ProfileCorner";
 import { Button } from "@/components/ui/button";
+import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
+import { isOffline, OFFLINE_MS } from "@/lib/heartbeat";
 import { supabase } from "@/integrations/supabase/client";
 import { audio } from "@/lib/audio";
 
@@ -121,6 +123,25 @@ function RoomPage() {
   const [wheel, setWheel] = useState(false);
   const myReady = useRef(false);
   const lobbyCh = useRef<RealtimeChannel | null>(null);
+  // heartbeat: presence = alive. Anyone missing for OFFLINE_MS is removed from the room.
+  const seen = useRef<Record<string, number>>({});
+  const playersRef = useRef(players); playersRef.current = players;
+  useEffect(() => {
+    if (!account) return;
+    const joinedAt = Date.now();
+    const t = setInterval(() => {
+      const now = Date.now();
+      if (now - joinedAt < OFFLINE_MS) return;
+      for (const p of playersRef.current) {
+        if (p.id === account.id) continue;
+        const last = seen.current[p.id] ?? joinedAt;
+        const st = lobbyCh.current?.presenceState() ?? {};
+        if (st[p.id]) { seen.current[p.id] = now; continue; }
+        if (isOffline(last, now)) { delete seen.current[p.id]; void supabase.from("players").delete().eq("room_code", code).eq("profile_id", p.id); }
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [account, code]);
   const playEmote = useCallback((id: string, e: string, target: string | null) => {
     const ids = players.map((p) => p.id);
     const ai = ids.indexOf(id), ti = target ? ids.indexOf(target) : -1;
@@ -144,6 +165,7 @@ function RoomPage() {
     ch.on("broadcast", { event: "emote" }, ({ payload }) => { const p = payload as { id: string; e: string; t: string | null }; playRef.current(p.id, p.e, p.t); });
     ch.on("presence", { event: "sync" }, () => {
       const st = ch.presenceState<{ ready: boolean }>();
+      const now = Date.now(); for (const id of Object.keys(st)) seen.current[id] = now;
       setReadyIds(new Set(Object.entries(st).filter(([, v]) => v.some((x) => x.ready)).map(([id]) => id)));
     });
     ch.subscribe((status) => { if (status === "SUBSCRIBED") { lobbyCh.current = ch; void ch.track({ ready: myReady.current }); } });
@@ -207,7 +229,7 @@ function RoomPage() {
       {inRoom && <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 p-1.5 text-xs">
         <span className="text-muted-foreground">Pilih peran:</span>
         <Button size="sm" variant={myPref === "hunter" ? "default" : "secondary"} onClick={() => void setPref("hunter")}>Pemburu</Button>
-        <Button size="sm" variant={myPref === "ghost" ? "default" : "secondary"} onClick={() => void setPref("ghost")}><Ghost /> Hantu</Button>
+        <Button size="sm" variant={myPref === "ghost" ? "default" : "secondary"} onClick={() => void setPref("ghost")}><img src={kuyangImg.url} alt="" className="size-5 rounded-full object-cover" /> Hantu</Button>
       </div>}
       {inRoom && <button onClick={() => setWheel(true)} className="flex items-center gap-1 rounded-full border-2 border-gold/70 bg-card/80 px-4 py-2 text-xs font-bold"><EmoteIcon id="dance" className="size-4" /> EMOTE</button>}
       <EmoteWheel open={wheel} onClose={() => setWheel(false)} onPick={doEmote} />

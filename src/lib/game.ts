@@ -108,7 +108,7 @@ export function circleHitsRect(cx: number, cy: number, r: number, b: Rect) {
 }
 
 export function move(x: number, y: number, dx: number, dy: number, r = PLAYER_R): { x: number; y: number } {
-  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 8);
+  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4);
   if (steps > 1) {
     let p = { x, y };
     for (let i = 0; i < steps; i++) p = move(p.x, p.y, dx / steps, dy / steps, r);
@@ -118,6 +118,8 @@ export function move(x: number, y: number, dx: number, dy: number, r = PLAYER_R)
   if (WALLS.some((w) => circleHitsRect(nx, y, r, w))) nx = x;
   let ny = y + dy;
   if (WALLS.some((w) => circleHitsRect(nx, ny, r, w))) ny = y;
+  // diagonal safety: never end inside a wall
+  if (WALLS.some((w) => circleHitsRect(nx, ny, r, w))) return { x, y };
   return { x: nx, y: ny };
 }
 

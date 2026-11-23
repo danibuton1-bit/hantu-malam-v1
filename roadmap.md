@@ -9,8 +9,8 @@
 - [x] Low-end Android performance mode
 - [x] Admin = first registered ID card, admin dashboard with live matches
 - [x] Cinematic admin drone (joystick, up/down, rotate, follow player, visible to players)
-- [ ] Admin ID card design (gold border, ADMIN badge)
-- [ ] Admin sound manager (music + per-ghost sound effects)
+- [x] Admin ID card design (gold border, ADMIN badge)
+- [x] Admin sound manager (music + per-ghost sound effects)
 - [x] New hoodie tentacle ghost from uploaded image
 - [x] Map mode picker: Rumah Tua, Rumah Sakit (flicker), Kuburan (fog), Hotel 2 lantai + lift
 - [x] Squad lobby (empty until invite, invited stand together, captain starts) + 10s countdown
@@ -19,11 +19,13 @@
 
 - [x] Drone trailer: fly to 40m, roof fade, crane/orbit shots, 21:9, clean screen
 - [x] Bot teammates fill empty squad slots
-- [ ] Hantu Hoodie 3D terbang (ditunda oleh user)
+- [x] Hantu Hoodie 3D terbang (ditunda oleh user)
 - [x] Drone director bar (trailer buttons apart from up/down), KUNCI & PUTAR lock-on orbit, drone sees emotes
 - [x] Smoother 3D hunters (rounded shapes, vest, shoes, hair), realistic hug/kiss poses
 - [ ] 3D lobby stage with the same 3D characters
-- [ ] No-scroll game-style sign-up/menus, FHD graphics option, full screen button
+- [x] No-scroll game-style sign-up/menus, FHD graphics option, full screen button
+- [x] Diagonal wall-clipping fix
+- [x] All ghosts are 3D Kuyang + Kuyang scream + uploaded Kuyang art on jumpscare
 - [ ] Hotel: real 2-floor building, big lift with ↑↓ wall buttons, click-to-open doors, no wall clipping
-- [ ] Auto-remove offline players from rooms (stale "Qila" bug)
-- [ ] Hantu Hoodie 3D flying
+- [x] Auto-remove offline players from rooms (stale "Qila" bug)
+- [x] Hantu Hoodie 3D flying

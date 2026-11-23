@@ -3,14 +3,16 @@ import { Download } from "lucide-react";
 import { renderIdCard } from "@/lib/idcard";
 import type { Profile } from "@/lib/account";
 import { Button } from "./ui/button";
+import { useIsAdmin } from "@/lib/admin";
 
 export function IdCardView({ profile, compact }: { profile: Profile; compact?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
+  const admin = useIsAdmin(profile);
   useEffect(() => {
     let live = true;
-    void renderIdCard(profile).then((u) => live && setUrl(u));
+    void renderIdCard(profile, admin === true).then((u) => live && setUrl(u));
     return () => { live = false; };
-  }, [profile]);
+  }, [profile, admin]);
   if (!url) return <div className="aspect-[1000/620] w-full animate-pulse rounded-xl bg-muted" />;
   if (compact) return <img src={url} alt="ID Card" className="w-full rounded" />;
   return (

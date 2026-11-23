@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 import { Battery, Ghost, KeyRound, Megaphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
 import { batterySvg, characterSvg, CHARACTERS, exclaimSvg, ghostSvg, keySvg, kuntilanakSvg, hoodieSvg, loadImg, pocongSvg, type CharId } from "@/lib/art";
 import { audio } from "@/lib/audio";
 import { BATTERIES, BOT_GHOST_ID, BOT_PATROL, CATCH_DIST, ROOMS, WALLS, WORLD, decideOutcome, EXIT, GAME_SECONDS, GHOST_SPAWN, HUNTER_SPAWNS, KEYS, move, npcsAt, roomAt, TOTAL_KEYS, applyMap, liftAt, LIFTS, MAP_ID, MAPS, type MapId } from "@/lib/game";
@@ -59,7 +60,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
   const [scare, setScare] = useState(0);
   const ambushRef = useRef<() => void>(() => {});
 
-  const scareUrl = useMemo(() => loadImg(ghostSvg()).src, []);
+  const scareUrl = kuyangImg.url;
   const meP = players.find((p) => p.id === me)!;
   const amGhost = meP.role === "ghost";
 
@@ -312,7 +313,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       if (!amGhost && gl && meL.status === "alive" && !countdown && !ended) {
         const d = Math.hypot(gl.x - meL.x, gl.y - meL.y);
         const ang = Math.atan2(gl.x - meL.x, gl.y - meL.y) + Math.PI; const diff = Math.abs(((ang - meL.yaw) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        if (d < 130 && (lastGhostD - d > 60 || diff < 0.7) && now > scareCd) { scareCd = now + 15000; stunUntil = now + 1500; audio.scream(); setScare(Math.random()); setTimeout(() => setScare(0), 1300); }
+        if (d < 130 && (lastGhostD - d > 60 || diff < 0.7) && now > scareCd) { scareCd = now + 15000; stunUntil = now + 1500; audio.kuyang(); setScare(Math.random()); setTimeout(() => setScare(0), 1300); }
         lastGhostD = d;
       }
 
@@ -395,7 +396,7 @@ export function Game({ code, me, players, startedAt, isHost, onBackToLobby, onLe
       </div>
       <EmoteWheel open={emoteOpen} onClose={() => setEmoteOpen(false)} onPick={(id) => emoteRef.current(id)} />
       {amGhost && !spectating && <button onPointerDown={() => ambushRef.current()} className="absolute bottom-8 right-6 flex size-20 flex-col items-center justify-center rounded-full border-2 border-primary bg-blood/80 text-[10px] font-bold text-primary-foreground glow-blood"><Ghost className="size-6" />KAGETKAN</button>}
-      {scare > 0 && <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-void/70"><img src={scareUrl} alt="" className="hm-scare h-[90vh] max-w-none" style={{ filter: "drop-shadow(0 0 40px hsl(350 90% 40%))" }} /></div>}
+      {scare > 0 && <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-void/70"><img src={scareUrl} alt="" className="hm-scare h-[90vh] max-w-none rounded-2xl object-cover" style={{ filter: "drop-shadow(0 0 40px hsl(350 90% 40%))" }} /></div>}
       {/* minimap */}
       <div className="pointer-events-none absolute right-2 top-12 rounded-md border border-border bg-void/70 p-1">
         <canvas ref={mapRef} width={150} height={100} className="block h-[100px] w-[150px]" />

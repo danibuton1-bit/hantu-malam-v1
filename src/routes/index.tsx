@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Art";
 import { useApp } from "@/components/AppState";
 import { Button } from "@/components/ui/button";
+import { FullscreenButton } from "@/components/FullscreenButton";
+import kuyangImg from "@/assets/kuyang_hoodie.jpg.asset.json";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,20 +29,29 @@ function Landing() {
 
   if (splash || !ready || account) {
     return (
-      <main className="flex min-h-full flex-col items-center justify-center gap-6 px-6">
-        <Logo className="w-full max-w-md animate-flicker rounded-xl" />
+      <main className="flex h-full flex-col items-center justify-center gap-4 overflow-hidden px-6">
+        <Logo className="max-h-[45cqh] w-auto max-w-md animate-flicker rounded-xl" />
         <div className="h-1.5 w-48 overflow-hidden rounded bg-muted"><div className="h-full w-1/2 animate-pulse bg-blood" /></div>
         <p className="text-sm text-muted-foreground">Memanggil arwah...</p>
       </main>
     );
   }
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center gap-6 px-6 py-10">
-      <Logo className="w-full rounded-xl glow-blood" />
-      <h1 className="font-horror text-drip text-center text-4xl text-primary">HANTU MALAM</h1>
-      <p className="-mt-4 text-center text-sm text-muted-foreground">Tanpa email. Cukup ID Card — kunci dengan password kalau mau.</p>
-      <Button asChild size="lg" className="h-16 w-full text-lg glow-blood"><Link to="/daftar">DAFTAR AKUN BARU</Link></Button>
-      <Button asChild size="lg" variant="secondary" className="h-16 w-full text-lg"><Link to="/login">LOGIN PAKAI ID CARD</Link></Button>
+    <main className="relative flex h-full items-center justify-center overflow-hidden">
+      <img src={kuyangImg.url} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30" />
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+      <FullscreenButton className="absolute right-3 top-3 z-10" />
+      <div className="relative z-10 flex h-full w-full max-w-4xl items-center justify-center px-5 py-4 flex-row gap-8">
+        <Logo className="w-auto rounded-xl glow-blood max-h-[70cqh] max-w-[45vw]" />
+        <div className="flex w-full max-w-sm flex-col items-center gap-3">
+          <h1 className="font-horror text-drip text-center text-[clamp(1.8rem,7cqh,3rem)] leading-none text-primary">HANTU MALAM</h1>
+          <p className="text-center text-xs text-muted-foreground">Tanpa email. Cukup ID Card.</p>
+          <div className="grid w-full grid-cols-2 gap-2">
+            <Button asChild size="lg" className="h-[clamp(2.75rem,10cqh,3.75rem)] text-sm glow-blood"><Link to="/daftar">DAFTAR</Link></Button>
+            <Button asChild size="lg" variant="secondary" className="h-[clamp(2.75rem,10cqh,3.75rem)] text-sm"><Link to="/login">LOGIN ID CARD</Link></Button>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }

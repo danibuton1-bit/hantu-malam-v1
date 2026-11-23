@@ -6,6 +6,8 @@ import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { hasPassword, setPassword } from "@/lib/account";
+import { getGfx, setGfx, type Gfx } from "@/lib/graphics";
+import { FullscreenButton } from "./FullscreenButton";
 
 /** Pengaturan pemain: kunci akun dengan password supaya ID Card saja tidak cukup untuk login. */
 export function SettingsDialog() {
@@ -13,6 +15,8 @@ export function SettingsDialog() {
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState<boolean | null>(null);
   const [oldP, setOldP] = useState(""); const [p1, setP1] = useState(""); const [p2, setP2] = useState("");
+  const [gfx, setGfxS] = useState<Gfx>("standar");
+  useEffect(() => { setGfxS(getGfx()); }, [open]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ok, setOk] = useState("");
   useEffect(() => {
     if (!open || !account) return;
@@ -44,6 +48,16 @@ export function SettingsDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="font-horror text-2xl">PENGATURAN</DialogTitle></DialogHeader>
+        <section className="space-y-2">
+          <div className="font-bold">Grafis</div>
+          <div className="grid grid-cols-3 gap-1">
+            {([["hemat", "Hemat"], ["standar", "Standar"], ["ultra", "Ultra FHD"]] as const).map(([id, l]) => (
+              <Button key={id} size="sm" variant={gfx === id ? "default" : "secondary"} onClick={() => { setGfx(id); setGfxS(id); }}>{l}</Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Ultra FHD = resolusi penuh layar HP, paling tajam tapi lebih berat. Berlaku di pertandingan berikutnya.</p>
+          <FullscreenButton label className="w-full" />
+        </section>
         <section className="space-y-3">
           <div className="flex items-center gap-2 font-bold">
             {locked ? <Lock className="size-4 text-primary" /> : <LockOpen className="size-4 text-muted-foreground" />} Kunci Akun
